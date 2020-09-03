@@ -1,3 +1,4 @@
+.vs/*.sqlite
 .vs/vulkan
 vulkan_experiments/out
 vulkan_experiments/.vs/vulkan_experiments
@@ -5,3 +6,4 @@ vulkan_experiments/utilities/glfw
 vulkan_experiments/utilities/glm
 vulkan_experiments/utilities/stb
 vulkan_experiments/utilities/tinyobjloader
+vulkan_experiments/utilities/imgui

@@ -4,11 +4,8 @@
 cmake_minimum_required (VERSION 3.8)
 
 # Add source to this project's executable.
-file(GLOB SRCS "*.cpp")
-file(GLOB HDRS ".hpp .h")
+file(GLOB SHARED_SRCS "*.cpp")
+file(GLOB SHARED_HDRS ".hpp")
 
-add_executable(vulkan ${SRCS} ${HDRS})
-add_dependencies(vulkan glfw)
-add_dependencies(vulkan tinyobjloader)
-
-target_link_libraries(vulkan ${Vulkan_LIBRARIES} glfw tinyobjloader)
+add_library(vulkan ${SHARED_SRCS} ${SHARED_HDRS})
+add_dependencies(vulkan glfw tinyobjloader)
