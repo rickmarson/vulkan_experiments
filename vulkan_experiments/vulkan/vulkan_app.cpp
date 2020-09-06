@@ -119,12 +119,10 @@ bool VulkanApp::recreateSwapChain() {
 void VulkanApp::drawFrame() {
     VkResult result = vulkan_backend_.submitCommands();
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result != VK_SUBOPTIMAL_KHR || window_resized_) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window_resized_) {
         window_resized_ = false;
         if (!recreateSwapChain()) {
             std::cerr << "Failed to re-create swap chain!" << std::endl;
         }
-    } else {
-        std::cerr << "Error while submitting drawing commands!" << std::endl;
     }
 }

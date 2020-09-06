@@ -10,7 +10,6 @@
 #include <optional>
 #include <algorithm>
 #include <iostream>
-#include <functional>  
 
 // Additional Helper Functions
 
@@ -181,6 +180,17 @@ namespace {
             return actual_extent;
         }
     }
+
+    uint32_t findMemoryType(uint32_t typeFilter, VkPhysicalDevice physical_device, VkMemoryPropertyFlags properties) {
+        VkPhysicalDeviceMemoryProperties mem_properties;
+        vkGetPhysicalDeviceMemoryProperties(physical_device, &mem_properties);
+
+        for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
+            if ((typeFilter & (1 << i)) && (mem_properties.memoryTypes[i].propertyFlags & properties) == properties) {
+                return i;
+            }
+        }
+    }
 }
 
 // VulkanBackend
@@ -240,6 +250,20 @@ void VulkanBackend::shutDown() {
 
     cleanupSwapChain();
 
+    for (auto& buffer : host_visible_buffers_) {
+        vkDestroyBuffer(device_, buffer.second.vk_buffer, nullptr);
+        vkFreeMemory(device_, buffer.second.vk_buffer_memory, nullptr);
+    }
+
+    host_visible_buffers_.clear();
+
+    for (auto& buffer : gpu_local_buffers_) {
+        vkDestroyBuffer(device_, buffer.second.vk_buffer, nullptr);
+        vkFreeMemory(device_, buffer.second.vk_buffer_memory, nullptr);
+    }
+
+    gpu_local_buffers_.clear();
+    
     for (uint32_t i = 0; i < max_frames_in_flight_; i++) {
         vkDestroySemaphore(device_, render_finished_semaphores_[i], nullptr);
         vkDestroySemaphore(device_, image_available_semaphores_[i], nullptr);
@@ -355,10 +379,10 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
 
     VkPipelineVertexInputStateCreateInfo vertex_input_info{};
     vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex_input_info.vertexBindingDescriptionCount = 0;
-    vertex_input_info.pVertexBindingDescriptions = nullptr; // Optional
-    vertex_input_info.vertexAttributeDescriptionCount = 0;
-    vertex_input_info.pVertexAttributeDescriptions = nullptr; // Optional
+    vertex_input_info.vertexBindingDescriptionCount = static_cast<uint32_t>(config.vertex_buffer_binding_desc.size());
+    vertex_input_info.pVertexBindingDescriptions = config.vertex_buffer_binding_desc.data();
+    vertex_input_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(config.vertex_buffer_attrib_desc.size());
+    vertex_input_info.pVertexAttributeDescriptions = config.vertex_buffer_attrib_desc.data();
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly{};
     input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -465,7 +489,7 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
     }
 
     auto key = std::hash<std::string>{}(config.name);
-    GraphicsPipeline graphics_pipeline{ config.name, pipeline_layout, vk_pipeline, key };
+    GraphicsPipeline graphics_pipeline{ config.name, key, pipeline_layout, vk_pipeline };
 
     pipelines_.insert({ key, graphics_pipeline });
 
@@ -513,9 +537,10 @@ VkResult VulkanBackend::submitCommands() {
 
     vkResetFences(device_, 1, &in_flight_fences_[current_frame_]);
 
-    if (vkQueueSubmit(graphics_queue_, 1, &submit_info, in_flight_fences_[current_frame_]) != VK_SUCCESS) {
+    result = vkQueueSubmit(graphics_queue_, 1, &submit_info, in_flight_fences_[current_frame_]);
+    if (result != VK_SUCCESS) {
         std::cerr << "Failed to submit draw command buffer!" << std::endl;
-        return VK_NOT_READY;
+        return result;
     }
 
     VkPresentInfoKHR present_info{};
@@ -541,6 +566,8 @@ VkResult VulkanBackend::submitCommands() {
     }
 
     current_frame_ = (current_frame_ + 1) % max_frames_in_flight_;
+
+    return result;
 }
 
 bool VulkanBackend::initVulkan() {
@@ -868,4 +895,67 @@ VkShaderModule VulkanBackend::createShaderModule(const std::vector<char>& code) 
     }
 
     return shader_module;
+}
+
+VkDeviceMemory VulkanBackend::allocateDeviceMemory(VkBuffer buffer, VkMemoryPropertyFlags properties) {
+    VkMemoryRequirements mem_reqs;
+    vkGetBufferMemoryRequirements(device_, buffer, &mem_reqs);
+
+    VkMemoryAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc_info.allocationSize = mem_reqs.size;
+    alloc_info.memoryTypeIndex = findMemoryType(mem_reqs.memoryTypeBits, physical_device_, properties);
+
+    VkDeviceMemory buffer_memory;
+    if (vkAllocateMemory(device_, &alloc_info, nullptr, &buffer_memory) != VK_SUCCESS) {
+        std::cerr << "Failed to allocate vertex buffer memory!" << std::endl;
+        return VK_NULL_HANDLE;
+    }
+
+    return buffer_memory;
+}
+
+void VulkanBackend::copyBufferToGpuLocalMemory(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size) {
+    VkCommandBufferAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    alloc_info.commandPool = command_pool_;
+    alloc_info.commandBufferCount = 1;
+
+    VkCommandBuffer command_buffer;
+    vkAllocateCommandBuffers(device_, &alloc_info, &command_buffer);
+
+    VkCommandBufferBeginInfo begin_info{};
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    vkBeginCommandBuffer(command_buffer, &begin_info);
+
+    VkBufferCopy copy_region{};
+    copy_region.srcOffset = 0; // Optional
+    copy_region.dstOffset = 0; // Optional
+    copy_region.size = size;
+    vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
+
+    vkEndCommandBuffer(command_buffer);
+
+    VkSubmitInfo submit_info{};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffer;
+
+    vkQueueSubmit(graphics_queue_, 1, &submit_info, VK_NULL_HANDLE);
+    vkQueueWaitIdle(graphics_queue_);
+
+    vkFreeCommandBuffers(device_, command_pool_, 1, &command_buffer);
+}
+
+Buffer VulkanBackend::createIndexBuffer(const std::string& name, const std::vector<uint32_t>& src_buffer) {
+    Buffer staging_buffer = createBuffer<uint32_t>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, true, false);
+    updateBuffer<uint32_t>(staging_buffer, src_buffer, true);
+    Buffer index_buffer = createBuffer<uint32_t>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_SHARING_MODE_EXCLUSIVE, false, true);
+    copyBufferToGpuLocalMemory(staging_buffer.vk_buffer, index_buffer.vk_buffer, sizeof(uint32_t) * src_buffer.size());
+    vkDestroyBuffer(device_, staging_buffer.vk_buffer, nullptr);
+    vkFreeMemory(device_, staging_buffer.vk_buffer_memory, nullptr);
+    return index_buffer;
 }

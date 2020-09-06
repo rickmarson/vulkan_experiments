@@ -25,6 +25,7 @@ protected:
     bool recreateSwapChain();
 
     virtual bool createGraphicsPipeline() = 0;
+    virtual bool createBuffers() = 0;
     virtual bool recordCommands() = 0;
 
     // actual rendering code
