@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 #include <string>
-#include <functional>  
+#include <functional>
 
 
 // Interfaces
@@ -39,6 +39,8 @@ struct GraphicsPipelineConfig {
     // vertex buffer
     std::vector<VkVertexInputBindingDescription> vertex_buffer_binding_desc;
     std::vector<VkVertexInputAttributeDescription> vertex_buffer_attrib_desc;
+    // uniform buffer(s)
+    std::vector<VkDescriptorSetLayout> uniform_buffer_layouts;
 
     RenderPass render_pass;
 };
@@ -58,6 +60,15 @@ struct Buffer {
     VkBufferUsageFlags type = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
     VkBuffer vk_buffer = VK_NULL_HANDLE;
     VkDeviceMemory vk_buffer_memory = VK_NULL_HANDLE;
+};
+
+struct UniformBuffer {
+    std::string name;
+    size_t key = 0;
+
+    VkDescriptorSetLayout layout; 
+    std::vector<Buffer> buffers;  // one per command buffer / swap chain image
+    std::vector<VkDescriptorSet> descriptors; // one per command buffer / swap chain image
 };
 
 // VulkanBackend
@@ -88,7 +99,10 @@ public:
     Buffer createIndexBuffer(const std::string& name, const std::vector<uint32_t>& src_buffer);
 
     template<typename DataType>
-    void updateBuffer(Buffer dst_buffer, const std::vector<DataType>& src_buffer, bool is_staging_buffer = false);
+    void updateBuffer(Buffer dst_buffer, const std::vector<DataType>& src_buffer);
+
+    template<typename DataType>
+    UniformBuffer createUniformBuffer(const std::string base_name, VkShaderStageFlags flags);
 
     std::vector<VkCommandBuffer>& getCommandBuffers() { return command_buffers_; }
 
@@ -104,6 +118,7 @@ private:
     bool createImageViews();
     bool createCommandPool();
     bool createCommandBuffers();
+    bool createDescriptorPool();
     bool createSyncObjects();
 
     void cleanupSwapChain();
@@ -122,6 +137,7 @@ private:
     void copyBufferToGpuLocalMemory(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
 
     const uint32_t max_frames_in_flight_ = 2;
+    const uint32_t max_descriptor_sets_ = 5; 
     size_t current_frame_ = 0;
     VkExtent2D window_swap_extent_ = { 0, 0 };
     SwapChainSupportDetails swap_chain_support_;
@@ -138,6 +154,7 @@ private:
     VkExtent2D swap_chain_extent_ = { 0,0 };
     std::vector<VkImageView> swap_chain_image_views_;
     VkCommandPool command_pool_ = VK_NULL_HANDLE;  // one for every queue
+    VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> command_buffers_;  // one for every image in the swap chain
     std::vector<VkSemaphore> image_available_semaphores_;
     std::vector<VkSemaphore> render_finished_semaphores_;
@@ -148,6 +165,7 @@ private:
     std::unordered_map<size_t, GraphicsPipeline> pipelines_;
     std::unordered_map<size_t, Buffer> gpu_local_buffers_;
     std::unordered_map<size_t, Buffer> host_visible_buffers_;
+    std::unordered_map<size_t, UniformBuffer> uniform_buffers_;
 };
 
 // inlines
@@ -155,7 +173,7 @@ private:
 template<typename DataType>
 Buffer VulkanBackend::createVertexBuffer(const std::string& name, const std::vector<DataType>& src_buffer) {
     Buffer staging_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, true, false);
-    updateBuffer<DataType>(staging_buffer, src_buffer, true);
+    updateBuffer<DataType>(staging_buffer, src_buffer);
     Buffer vertex_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_SHARING_MODE_EXCLUSIVE, false, true);
     copyBufferToGpuLocalMemory(staging_buffer.vk_buffer, vertex_buffer.vk_buffer, sizeof(DataType) * src_buffer.size());
     vkDestroyBuffer(device_, staging_buffer.vk_buffer, nullptr);
@@ -179,7 +197,7 @@ Buffer VulkanBackend::createBuffer(const std::string& name,
     
     VkBuffer vk_buffer;
     if (vkCreateBuffer(device_, &buffer_info, nullptr, &vk_buffer) != VK_SUCCESS) {
-        std::cerr << "Failed to create vertex buffer!" << std::endl;
+        std::cerr << "Failed to create buffer!" << std::endl;
         return Buffer{};
     }
 
@@ -214,15 +232,121 @@ Buffer VulkanBackend::createBuffer(const std::string& name,
 }
 
 template<typename DataType>
-void VulkanBackend::updateBuffer(Buffer dst_buffer, const std::vector<DataType>& src_buffer, bool is_staging_buffer) {
-    if (!is_staging_buffer && host_visible_buffers_.find(dst_buffer.key) == host_visible_buffers_.end()) {
-        std::cerr << "Cannot updateBuffer. Requested buffer " << dst_buffer.name << "[" << dst_buffer.key << "] is not a host visible buffer" << std::endl;
-        return;
-    }
-
+void VulkanBackend::updateBuffer(Buffer dst_buffer, const std::vector<DataType>& src_buffer) {
+    // Note: Buffer must be host visible
     void* data;
     size_t bytes = sizeof(DataType) * src_buffer.size();
     vkMapMemory(device_, dst_buffer.vk_buffer_memory, 0, bytes, 0, &data);
     memcpy(data, src_buffer.data(), bytes);
     vkUnmapMemory(device_, dst_buffer.vk_buffer_memory);
+}
+
+template<typename DataType>
+UniformBuffer VulkanBackend::createUniformBuffer(const std::string base_name, VkShaderStageFlags flags) {
+    VkDescriptorSetLayoutBinding layout_binding{};
+    layout_binding.binding = 0;
+    layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    layout_binding.descriptorCount = 1;
+    layout_binding.stageFlags = flags;
+    layout_binding.pImmutableSamplers = nullptr; // Optional
+
+    VkDescriptorSetLayoutCreateInfo layout_info{};
+    layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layout_info.bindingCount = 1;
+    layout_info.pBindings = &layout_binding;
+
+    VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
+    if (vkCreateDescriptorSetLayout(device_, &layout_info, nullptr, &descriptor_set_layout) != VK_SUCCESS) {
+        std::cerr << "Failed to create descriptor set layout!" << std::endl;
+        return UniformBuffer{};
+    }
+    
+    std::vector<Buffer> buffers;
+    
+    VkBufferCreateInfo buffer_info{};
+    buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    buffer_info.size = sizeof(DataType);
+    buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VkMemoryPropertyFlags mem_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+    for (size_t i = 0; i < swap_chain_images_.size(); i++) {
+        auto name = base_name + std::to_string(i);
+
+        VkBuffer vk_buffer;
+        if (vkCreateBuffer(device_, &buffer_info, nullptr, &vk_buffer) != VK_SUCCESS) {
+            std::cerr << "Failed to create uniform buffer!" << std::endl;
+            return UniformBuffer{};
+        }
+
+        VkDeviceMemory memory = allocateDeviceMemory(vk_buffer, mem_properties);
+
+        if (memory != VK_NULL_HANDLE) {
+            vkBindBufferMemory(device_, vk_buffer, memory, 0);
+        }
+        else {
+            vkDestroyBuffer(device_, vk_buffer, nullptr);
+            return UniformBuffer{};
+        }
+
+        Buffer buffer;
+        buffer.name = name;
+        buffer.key = std::hash<std::string>{}(name);
+        buffer.type = buffer_info.usage;
+        buffer.vk_buffer = vk_buffer;
+        buffer.vk_buffer_memory = memory;
+
+        buffers.push_back(buffer);
+    }
+
+    std::vector<VkDescriptorSetLayout> layouts(swap_chain_images_.size(), descriptor_set_layout);
+    VkDescriptorSetAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    alloc_info.descriptorPool = descriptor_pool_;
+    alloc_info.descriptorSetCount = static_cast<uint32_t>(swap_chain_images_.size());
+    alloc_info.pSetLayouts = layouts.data();
+
+    std::vector<VkDescriptorSet> descriptor_sets(swap_chain_images_.size());
+    if (vkAllocateDescriptorSets(device_, &alloc_info, descriptor_sets.data()) != VK_SUCCESS) {
+        std::cerr << "Failed to allocate descriptor sets!" << std::endl;
+        descriptor_sets.clear();
+
+        for (auto& buffer : buffers) {
+            vkDestroyBuffer(device_, buffer.vk_buffer, nullptr);
+            vkFreeMemory(device_, buffer.vk_buffer_memory, nullptr);
+        }
+        buffers.clear();
+
+        return UniformBuffer{};
+    }
+
+    for (size_t i = 0; i < swap_chain_images_.size(); i++) {
+        VkDescriptorBufferInfo buffer_info{};
+        buffer_info.buffer = buffers[i].vk_buffer;
+        buffer_info.offset = 0;
+        buffer_info.range = sizeof(DataType);
+
+        VkWriteDescriptorSet descriptor_write{};
+        descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor_write.dstSet = descriptor_sets[i];
+        descriptor_write.dstBinding = 0;
+        descriptor_write.dstArrayElement = 0;
+        descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptor_write.descriptorCount = 1;
+        descriptor_write.pBufferInfo = &buffer_info;
+        descriptor_write.pImageInfo = nullptr; // Optional
+        descriptor_write.pTexelBufferView = nullptr; // Optional
+
+        vkUpdateDescriptorSets(device_, 1, &descriptor_write, 0, nullptr);
+    }
+
+    UniformBuffer uniform_buffer;
+    uniform_buffer.name = base_name; 
+    uniform_buffer.key = std::hash<std::string>{}(base_name);
+    uniform_buffer.layout = descriptor_set_layout; 
+    uniform_buffer.buffers = std::move(buffers);
+    uniform_buffer.descriptors = std::move(descriptor_sets);
+
+    uniform_buffers_.insert({ uniform_buffer.key, uniform_buffer });
+    return uniform_buffer;
 }

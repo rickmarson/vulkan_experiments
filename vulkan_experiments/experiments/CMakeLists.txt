@@ -8,7 +8,7 @@ file(GLOB TUTORIAL_SRCS "vulkan_tutorial.cpp")
 file(GLOB TUTORIAL_HDRS "vulkan_tutorial.hpp")
 
 add_executable(vulkan_tutorial ${TUTORIAL_SRCS} ${TUTORIAL_HDRS})
-add_dependencies(vulkan_tutorial glfw tinyobjloader vulkan)
+add_dependencies(vulkan_tutorial glfw tinyobjloader vulkan shaders)
 
 target_link_libraries(vulkan_tutorial ${Vulkan_LIBRARIES} glfw tinyobjloader vulkan)
 

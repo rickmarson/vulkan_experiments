@@ -1,7 +1,0 @@
-Copy the following third party libraries here:
-
-- glfw https://www.glfw.org/ (tested with 3.3.2)
-- glw https://glm.g-truc.net/0.9.9/index.html (tested with 0.9.9.7)
-- tinyobjloader https://github.com/tinyobjloader/tinyobjloader (tested with 2.0.0-rc7)
-- stb https://github.com/nothings/stb (tested with b42009b3b9d4ca35bc703f5310eedc74f584be58)
-- imgui https://github.com/ocornut/imgui (tested with 1.78)

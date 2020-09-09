@@ -190,6 +190,8 @@ namespace {
                 return i;
             }
         }
+
+        return 0;
     }
 }
 
@@ -415,7 +417,7 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
     rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
     rasterizer.depthBiasConstantFactor = 0.0f; // Optional
     rasterizer.depthBiasClamp = 0.0f; // Optional
@@ -453,8 +455,8 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
 
     VkPipelineLayoutCreateInfo pipeline_layout_info{};
     pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipeline_layout_info.setLayoutCount = 0; // Optional
-    pipeline_layout_info.pSetLayouts = nullptr; // Optional
+    pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(config.uniform_buffer_layouts.size());
+    pipeline_layout_info.pSetLayouts = config.uniform_buffer_layouts.data();
     pipeline_layout_info.pushConstantRangeCount = 0; // Optional
     pipeline_layout_info.pPushConstantRanges = nullptr; // Optional
 
@@ -587,6 +589,9 @@ bool VulkanBackend::initVulkan() {
         return false;
     }
     if (!createCommandBuffers()) {
+        return false;
+    }
+    if (!createDescriptorPool()) {
         return false;
     }
     if (!createSyncObjects()) {
@@ -810,6 +815,25 @@ bool VulkanBackend::createCommandBuffers() {
     return true;
 }
 
+bool VulkanBackend::createDescriptorPool() {
+    VkDescriptorPoolSize pool_size{};
+    pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    pool_size.descriptorCount = static_cast<uint32_t>(swap_chain_images_.size());
+
+    VkDescriptorPoolCreateInfo pool_info{};
+    pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool_info.poolSizeCount = 1;
+    pool_info.pPoolSizes = &pool_size;
+    pool_info.maxSets = static_cast<uint32_t>(swap_chain_images_.size())* max_descriptor_sets_;
+
+    if (vkCreateDescriptorPool(device_, &pool_info, nullptr, &descriptor_pool_) != VK_SUCCESS) {
+        std::cerr << "Failed to create descriptor pool!" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 bool VulkanBackend::createSyncObjects() {
     image_available_semaphores_.resize(max_frames_in_flight_);
     render_finished_semaphores_.resize(max_frames_in_flight_);
@@ -837,6 +861,18 @@ bool VulkanBackend::createSyncObjects() {
 }
 
 void VulkanBackend::cleanupSwapChain() {
+
+    for (auto& uniform_buffer : uniform_buffers_) {
+        for (auto& buffer : uniform_buffer.second.buffers) {
+            vkDestroyBuffer(device_, buffer.vk_buffer, nullptr);
+            vkFreeMemory(device_, buffer.vk_buffer_memory, nullptr);
+        }
+        vkDestroyDescriptorSetLayout(device_, uniform_buffer.second.layout, nullptr);
+        uniform_buffer.second.buffers.clear();
+    }
+    uniform_buffers_.clear();
+
+    vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
 
     for (auto& render_pass : render_passes_) {
         for (auto& framebuffer : render_pass.second.swap_chain_framebuffers) {
@@ -879,7 +915,10 @@ bool VulkanBackend::recreateSwapChain() {
     if (!createCommandBuffers()) {
         return false;
     }
-
+    if (!createDescriptorPool()) {
+        return false;
+    }
+    
     return true;
 }
 
@@ -952,7 +991,7 @@ void VulkanBackend::copyBufferToGpuLocalMemory(VkBuffer src_buffer, VkBuffer dst
 
 Buffer VulkanBackend::createIndexBuffer(const std::string& name, const std::vector<uint32_t>& src_buffer) {
     Buffer staging_buffer = createBuffer<uint32_t>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, true, false);
-    updateBuffer<uint32_t>(staging_buffer, src_buffer, true);
+    updateBuffer<uint32_t>(staging_buffer, src_buffer);
     Buffer index_buffer = createBuffer<uint32_t>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_SHARING_MODE_EXCLUSIVE, false, true);
     copyBufferToGpuLocalMemory(staging_buffer.vk_buffer, index_buffer.vk_buffer, sizeof(uint32_t) * src_buffer.size());
     vkDestroyBuffer(device_, staging_buffer.vk_buffer, nullptr);

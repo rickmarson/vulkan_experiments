@@ -8,7 +8,10 @@
 #include "file_system.hpp"
 
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <vector>
+#include <chrono>
 
 // Declarations
 struct Vertex {
@@ -40,6 +43,13 @@ struct Vertex {
 	}
 };
 
+struct ModelViewProj {
+	glm::mat4 model;
+	glm::mat4 view;
+	glm::mat4 proj;
+};
+
+
 const std::vector<Vertex> vertices = {
 	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
 	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
@@ -51,6 +61,7 @@ const std::vector<uint32_t> indices = {
 	0, 1, 2, 2, 3, 0
 };
 
+
 class VulkanTutorial : public VulkanApp {
 public:
 
@@ -58,15 +69,17 @@ public:
 private:
 	virtual bool loadAssets() final;
 	virtual bool setupScene() final;
-	virtual bool createGraphicsPipeline() final;
 	virtual bool createBuffers() final;
+	virtual bool createGraphicsPipeline() final;
 	virtual bool recordCommands() final;
 	virtual void updateScene() final;
 
-	RenderPass render_pass_;
-	GraphicsPipeline graphics_pipeline_;
 	Buffer vertex_buffer_;
 	Buffer index_buffer_;
+	UniformBuffer uniform_buffer_;
+	RenderPass render_pass_;
+	GraphicsPipeline graphics_pipeline_;
+	ModelViewProj mvp_;
 };
 
 // Implementation
@@ -91,10 +104,36 @@ bool VulkanTutorial::setupScene() {
 }
 
 void VulkanTutorial::updateScene() {
+	static auto start_time = std::chrono::high_resolution_clock::now();
 
+	auto current_time = std::chrono::high_resolution_clock::now();
+	float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
+	
+	auto extent = vulkan_backend_.getSwapChainExtent();
+	mvp_.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	mvp_.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	mvp_.proj = glm::perspective(glm::radians(45.0f), extent.width / (float)extent.height, 0.1f, 10.0f);
+
+	mvp_.proj[1][1] *= -1;  // y is inverted in vulkan w.r.t. opengl
+
+	auto& command_buffers = vulkan_backend_.getCommandBuffers();
+	for (size_t i = 0; i < command_buffers.size(); i++) {
+		vulkan_backend_.updateBuffer<ModelViewProj>(uniform_buffer_.buffers[i], { mvp_ });
+	}
+}
+
+bool VulkanTutorial::createBuffers() {
+	vertex_buffer_ = vulkan_backend_.createVertexBuffer<Vertex>("triangle_vertices", vertices);
+	index_buffer_ = vulkan_backend_.createIndexBuffer("triangle_indices", indices);
+	return vertex_buffer_.vk_buffer != VK_NULL_HANDLE && index_buffer_.vk_buffer != VK_NULL_HANDLE;
 }
 
 bool VulkanTutorial::createGraphicsPipeline() {
+	uniform_buffer_ = vulkan_backend_.createUniformBuffer<ModelViewProj>("mvp_ubo", VK_SHADER_STAGE_VERTEX_BIT);
+	if (uniform_buffer_.buffers.empty()) {
+		return false;
+	}
+
 	render_pass_ = vulkan_backend_.createRenderPass("Main Pass");
 
 	GraphicsPipelineConfig config;
@@ -104,16 +143,11 @@ bool VulkanTutorial::createGraphicsPipeline() {
 	config.vertex_buffer_binding_desc = Vertex::getBindingDescriptions();
 	config.vertex_buffer_attrib_desc = Vertex::getAttributeDescriptions();
 	config.render_pass = render_pass_;
+	config.uniform_buffer_layouts = { uniform_buffer_.layout };
 
 	graphics_pipeline_ = vulkan_backend_.createGraphicsPipeline(config);
 
 	return graphics_pipeline_.vk_graphics_pipeline != VK_NULL_HANDLE;
-}
-
-bool VulkanTutorial::createBuffers() {
-	vertex_buffer_ = vulkan_backend_.createVertexBuffer<Vertex>("triangle_vertices", vertices);
-	index_buffer_ = vulkan_backend_.createIndexBuffer("triangle_indices", indices);
-	return vertex_buffer_.vk_buffer != VK_NULL_HANDLE && index_buffer_.vk_buffer != VK_NULL_HANDLE;
 }
 
 bool VulkanTutorial::recordCommands() {
@@ -149,6 +183,7 @@ bool VulkanTutorial::recordCommands() {
 
 		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, vertex_buffers, offsets);
 		vkCmdBindIndexBuffer(command_buffers[i], index_buffer_.vk_buffer, 0, VK_INDEX_TYPE_UINT32);
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, 0, 1, &uniform_buffer_.descriptors[i], 0, nullptr);
 
 		vkCmdDrawIndexed(command_buffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
