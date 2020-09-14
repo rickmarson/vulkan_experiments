@@ -1,3 +1,9 @@
+/*
+* vulkan_app.hpp
+*
+* Copyright (C) 2020 Riccardo Marson
+*/
+
 #pragma once
 
 #include <fstream>

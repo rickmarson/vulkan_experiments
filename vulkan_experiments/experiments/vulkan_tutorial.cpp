@@ -5,41 +5,24 @@
 */
 
 #include "vulkan_app.hpp"
-#include "file_system.hpp"
+#include "shader_module.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <vector>
 #include <chrono>
+#include <map>
+#include <iostream>
 
 // Declarations
 struct Vertex {
 	glm::vec2 pos;
 	glm::vec3 color;
 
-	static std::vector<VkVertexInputBindingDescription> getBindingDescriptions() {
-		std::vector<VkVertexInputBindingDescription> binding_descriptions(1);
-		binding_descriptions[0].binding = 0;
-		binding_descriptions[0].stride = sizeof(Vertex);
-		binding_descriptions[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-		return binding_descriptions;
-	}
-
-	static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions() {
-		std::vector<VkVertexInputAttributeDescription> attribute_descriptions(2);
-		attribute_descriptions[0].binding = 0;
-		attribute_descriptions[0].location = 0;
-		attribute_descriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
-		attribute_descriptions[0].offset = offsetof(Vertex, pos);
-
-		attribute_descriptions[1].binding = 0;
-		attribute_descriptions[1].location = 1;
-		attribute_descriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attribute_descriptions[1].offset = offsetof(Vertex, color);
-
-		return attribute_descriptions;
+	static VertexFormatInfo getFormatInfo() {
+		std::vector<size_t> offsets = { offsetof(Vertex, pos), offsetof(Vertex, color) };
+		return { sizeof(Vertex) , offsets };
 	}
 };
 
@@ -73,10 +56,12 @@ private:
 	virtual bool createGraphicsPipeline() final;
 	virtual bool recordCommands() final;
 	virtual void updateScene() final;
+	virtual void cleanup() final;
 
 	Buffer vertex_buffer_;
 	Buffer index_buffer_;
-	UniformBuffer uniform_buffer_;
+	std::map<std::string, std::shared_ptr<ShaderModule>> shaders_;
+	std::map<std::string, UniformBuffer> uniform_buffers_;
 	RenderPass render_pass_;
 	GraphicsPipeline graphics_pipeline_;
 	ModelViewProj mvp_;
@@ -85,7 +70,21 @@ private:
 // Implementation
 
 bool VulkanTutorial::loadAssets() {
-	if (!createBuffers()) {
+	auto vertex_shader = vulkan_backend_.createShaderModule("vertex");
+	vertex_shader->loadSpirvShader("shaders/tutorial_vs.spv");
+
+	if (!vertex_shader->isVertexFormatCompatible(Vertex::getFormatInfo())) {
+		std::cerr << "Requested Vertex format is not compatible with pipeline input!" << std::endl;
+		return false;
+	}
+
+	auto fragment_shader = vulkan_backend_.createShaderModule("fragment");
+	fragment_shader->loadSpirvShader("shaders/tutorial_fs.spv");
+
+	shaders_[vertex_shader->getName()] = std::move(vertex_shader);
+	shaders_[fragment_shader->getName()] = std::move(fragment_shader);
+
+;	if (!createBuffers()) {
 		return false;
 	}
 
@@ -103,6 +102,10 @@ bool VulkanTutorial::setupScene() {
 	return true;
 }
 
+void VulkanTutorial::cleanup() {
+	shaders_.clear();
+}
+
 void VulkanTutorial::updateScene() {
 	static auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -118,7 +121,7 @@ void VulkanTutorial::updateScene() {
 
 	auto& command_buffers = vulkan_backend_.getCommandBuffers();
 	for (size_t i = 0; i < command_buffers.size(); i++) {
-		vulkan_backend_.updateBuffer<ModelViewProj>(uniform_buffer_.buffers[i], { mvp_ });
+		vulkan_backend_.updateBuffer<ModelViewProj>(uniform_buffers_["vertex_0"].buffers[i], { mvp_ });
 	}
 }
 
@@ -129,21 +132,20 @@ bool VulkanTutorial::createBuffers() {
 }
 
 bool VulkanTutorial::createGraphicsPipeline() {
-	uniform_buffer_ = vulkan_backend_.createUniformBuffer<ModelViewProj>("mvp_ubo", VK_SHADER_STAGE_VERTEX_BIT);
-	if (uniform_buffer_.buffers.empty()) {
-		return false;
-	}
+	const auto& layout_set = shaders_["vertex"]->getDescriptorSetLayouts();
+	auto buffer_name = shaders_["vertex"]->getName() + "_" + std::to_string(layout_set[0].id);
+	// we still need to know the underlying C++ type to bind to the buffer
+	uniform_buffers_[buffer_name] = vulkan_backend_.createUniformBuffer<ModelViewProj>(buffer_name, layout_set[0].layout);
 
 	render_pass_ = vulkan_backend_.createRenderPass("Main Pass");
 
 	GraphicsPipelineConfig config;
 	config.name = "Solid Geometry";
-	config.vert_code = readFile("shaders/tutorial_vs.spv");
-	config.frag_code = readFile("shaders/tutorial_fs.spv");
-	config.vertex_buffer_binding_desc = Vertex::getBindingDescriptions();
-	config.vertex_buffer_attrib_desc = Vertex::getAttributeDescriptions();
+	config.vertex = shaders_["vertex"];
+	config.fragment = shaders_["fragment"];
+	config.vertex_buffer_binding_desc = shaders_["vertex"]->getInputBindingDescription();
+	config.vertex_buffer_attrib_desc = shaders_["vertex"]->getInputAttributes();
 	config.render_pass = render_pass_;
-	config.uniform_buffer_layouts = { uniform_buffer_.layout };
 
 	graphics_pipeline_ = vulkan_backend_.createGraphicsPipeline(config);
 
@@ -183,7 +185,7 @@ bool VulkanTutorial::recordCommands() {
 
 		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, vertex_buffers, offsets);
 		vkCmdBindIndexBuffer(command_buffers[i], index_buffer_.vk_buffer, 0, VK_INDEX_TYPE_UINT32);
-		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, 0, 1, &uniform_buffer_.descriptors[i], 0, nullptr);
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, 0, 1, &uniform_buffers_["vertex_0"].descriptors[i], 0, nullptr);
 
 		vkCmdDrawIndexed(command_buffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 

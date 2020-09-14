@@ -35,6 +35,7 @@ protected:
     virtual bool loadAssets() = 0;
     virtual bool setupScene() = 0;
     virtual void updateScene() = 0;
+    virtual void cleanup() = 0;
 
     // window
     const uint32_t WIDTH = 800;

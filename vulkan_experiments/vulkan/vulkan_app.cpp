@@ -68,6 +68,8 @@ bool VulkanApp::run() {
 
     mainLoop();
 
+    cleanup();
+
     vulkan_backend_.shutDown();
     glfwDestroyWindow(window_);
     glfwTerminate();

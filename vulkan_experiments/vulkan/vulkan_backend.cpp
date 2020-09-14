@@ -5,6 +5,8 @@
 */
 
 #include "vulkan_backend.hpp"
+#include "shader_module.hpp"
+#include "texture.hpp"
 
 #include <set>
 #include <optional>
@@ -280,6 +282,14 @@ void VulkanBackend::shutDown() {
     swap_chain_images_.clear();
 }
 
+std::shared_ptr<ShaderModule> VulkanBackend::createShaderModule(const std::string& name) const {
+    return ShaderModule::createShaderModule(name, device_);
+}
+
+std::shared_ptr<Texture> VulkanBackend::createTexture(const std::string& name) {
+    return Texture::createTexture(name, device_, this);
+}
+
 RenderPass VulkanBackend::createRenderPass(const std::string& name) {
     VkAttachmentDescription color_attachment{};
     color_attachment.format = swap_chain_image_format_;
@@ -360,29 +370,37 @@ RenderPass VulkanBackend::createRenderPass(const std::string& name) {
 }
 
 GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineConfig& config) {
-    VkShaderModule vert_shader_module = createShaderModule(config.vert_code);
-    VkShaderModule frag_shader_module = createShaderModule(config.frag_code);
-
     VkPipelineShaderStageCreateInfo vert_shader_stage_info{};
     vert_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vert_shader_stage_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vert_shader_stage_info.module = vert_shader_module;
+    vert_shader_stage_info.module = config.vertex->getShader();
     vert_shader_stage_info.pName = "main";
 
     VkPipelineShaderStageCreateInfo frag_shader_stage_info{};
     frag_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     frag_shader_stage_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    frag_shader_stage_info.module = frag_shader_module;
+    frag_shader_stage_info.module = config.fragment->getShader();
     frag_shader_stage_info.pName = "main";
 
     VkPipelineShaderStageCreateInfo shader_stages[] = { vert_shader_stage_info, frag_shader_stage_info };
+
+    // assemble all layout informations
+    std::vector<VkDescriptorSetLayout> all_layout_sets;
+    const auto& vertex_layouts = config.vertex->getDescriptorSetLayouts();
+    for (const auto& layout : vertex_layouts) {
+        all_layout_sets.push_back(layout.layout);
+    }
+    const auto& fragment_layouts = config.fragment->getDescriptorSetLayouts();
+    for (const auto& layout : fragment_layouts) {
+        all_layout_sets.push_back(layout.layout);
+    }
 
     // fixed functionality configuration
 
     VkPipelineVertexInputStateCreateInfo vertex_input_info{};
     vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex_input_info.vertexBindingDescriptionCount = static_cast<uint32_t>(config.vertex_buffer_binding_desc.size());
-    vertex_input_info.pVertexBindingDescriptions = config.vertex_buffer_binding_desc.data();
+    vertex_input_info.vertexBindingDescriptionCount = 1;
+    vertex_input_info.pVertexBindingDescriptions = &config.vertex_buffer_binding_desc;
     vertex_input_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(config.vertex_buffer_attrib_desc.size());
     vertex_input_info.pVertexAttributeDescriptions = config.vertex_buffer_attrib_desc.data();
 
@@ -455,8 +473,8 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
 
     VkPipelineLayoutCreateInfo pipeline_layout_info{};
     pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(config.uniform_buffer_layouts.size());
-    pipeline_layout_info.pSetLayouts = config.uniform_buffer_layouts.data();
+    pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(all_layout_sets.size());
+    pipeline_layout_info.pSetLayouts = all_layout_sets.data();
     pipeline_layout_info.pushConstantRangeCount = 0; // Optional
     pipeline_layout_info.pPushConstantRanges = nullptr; // Optional
 
@@ -494,9 +512,6 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
     GraphicsPipeline graphics_pipeline{ config.name, key, pipeline_layout, vk_pipeline };
 
     pipelines_.insert({ key, graphics_pipeline });
-
-    vkDestroyShaderModule(device_, frag_shader_module, nullptr);
-    vkDestroyShaderModule(device_, vert_shader_module, nullptr);
 
     return graphics_pipeline;
 }
@@ -867,7 +882,6 @@ void VulkanBackend::cleanupSwapChain() {
             vkDestroyBuffer(device_, buffer.vk_buffer, nullptr);
             vkFreeMemory(device_, buffer.vk_buffer_memory, nullptr);
         }
-        vkDestroyDescriptorSetLayout(device_, uniform_buffer.second.layout, nullptr);
         uniform_buffer.second.buffers.clear();
     }
     uniform_buffers_.clear();
@@ -922,24 +936,7 @@ bool VulkanBackend::recreateSwapChain() {
     return true;
 }
 
-VkShaderModule VulkanBackend::createShaderModule(const std::vector<char>& code) const {
-    VkShaderModuleCreateInfo create_info{};
-    create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    create_info.codeSize = code.size();
-    create_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
-
-    VkShaderModule shader_module;
-    if (vkCreateShaderModule(device_, &create_info, nullptr, &shader_module) != VK_SUCCESS) {
-        std::cerr << "Failed to create shader module!" << std::endl;
-    }
-
-    return shader_module;
-}
-
-VkDeviceMemory VulkanBackend::allocateDeviceMemory(VkBuffer buffer, VkMemoryPropertyFlags properties) {
-    VkMemoryRequirements mem_reqs;
-    vkGetBufferMemoryRequirements(device_, buffer, &mem_reqs);
-
+VkDeviceMemory VulkanBackend::allocateDeviceMemory(VkMemoryRequirements mem_reqs, VkMemoryPropertyFlags properties) {
     VkMemoryAllocateInfo alloc_info{};
     alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     alloc_info.allocationSize = mem_reqs.size;

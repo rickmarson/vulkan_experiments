@@ -13,6 +13,7 @@ include_directories(${Vulkan_INCLUDE_DIRS})
 include_directories("utilities/glm")
 include_directories("utilities/glfw/include")
 include_directories("utilities/stb")
+include_directories("utilities/SPIRV-Reflect")
 include_directories("vulkan")
 
 # compile shaders
@@ -25,8 +26,10 @@ endif()
 set(COMPILE_SHADERS_CMD "${CMAKE_SOURCE_DIR}/compile_shaders${SCRIPT_EXT}")
 add_custom_target(shaders ALL ${COMPILE_SHADERS_CMD} ${CMAKE_SOURCE_DIR})
 
+set(SPIRV_REFLECT_FOLDER ${CMAKE_CURRENT_SOURCE_DIR}/utilities/SPIRV-Reflect)
+
 # Include sub-projects.
 add_subdirectory("utilities/glfw")
 add_subdirectory("utilities/tinyobjloader")
-add_subdirectory ("vulkan")
+add_subdirectory("vulkan")
 add_subdirectory("experiments")

@@ -13,3 +13,6 @@
 [submodule "vulkan_experiments/utilities/stb"]
 	path = vulkan_experiments/utilities/stb
 	url = https://github.com/nothings/stb.git
+[submodule "vulkan_experiments/utilities/SPIRV-Reflect"]
+	path = vulkan_experiments/utilities/SPIRV-Reflect
+	url = https://github.com/KhronosGroup/SPIRV-Reflect.git

@@ -13,8 +13,9 @@
 #include <string>
 #include <functional>
 
-
 // Interfaces
+class ShaderModule;
+class Texture;
 
 struct SwapChainSupportDetails {
     VkSurfaceCapabilitiesKHR capabilities{};
@@ -33,14 +34,12 @@ struct RenderPass {
 struct GraphicsPipelineConfig {
     std::string name;
     // shaders
-    std::vector<char> vert_code;
-    std::vector<char> frag_code;
+    std::shared_ptr<ShaderModule> vertex;
+    std::shared_ptr<ShaderModule> fragment = nullptr;
     // TODO: add tessellation and geometry
     // vertex buffer
-    std::vector<VkVertexInputBindingDescription> vertex_buffer_binding_desc;
+    VkVertexInputBindingDescription vertex_buffer_binding_desc;
     std::vector<VkVertexInputAttributeDescription> vertex_buffer_attrib_desc;
-    // uniform buffer(s)
-    std::vector<VkDescriptorSetLayout> uniform_buffer_layouts;
 
     RenderPass render_pass;
 };
@@ -66,7 +65,6 @@ struct UniformBuffer {
     std::string name;
     size_t key = 0;
 
-    VkDescriptorSetLayout layout; 
     std::vector<Buffer> buffers;  // one per command buffer / swap chain image
     std::vector<VkDescriptorSet> descriptors; // one per command buffer / swap chain image
 };
@@ -90,6 +88,9 @@ public:
 
     bool recreateSwapChain();
     
+    std::shared_ptr<ShaderModule> createShaderModule(const std::string& name) const;
+    std::shared_ptr<Texture> createTexture(const std::string& name);
+
     RenderPass createRenderPass(const std::string& name);
     GraphicsPipeline createGraphicsPipeline(const GraphicsPipelineConfig& config);
     
@@ -102,13 +103,15 @@ public:
     void updateBuffer(Buffer dst_buffer, const std::vector<DataType>& src_buffer);
 
     template<typename DataType>
-    UniformBuffer createUniformBuffer(const std::string base_name, VkShaderStageFlags flags);
+    UniformBuffer createUniformBuffer(const std::string base_name, VkDescriptorSetLayout buffer_layout);
 
     std::vector<VkCommandBuffer>& getCommandBuffers() { return command_buffers_; }
 
     VkResult submitCommands();
 
 private:
+    friend class Texture;
+
     bool initVulkan();
     
     bool selectDevice();
@@ -123,17 +126,15 @@ private:
 
     void cleanupSwapChain();
 
-    VkShaderModule createShaderModule(const std::vector<char>& code) const;
-    
     template<typename DataType>
-    Buffer createBuffer(const std::string& name, 
-                        const std::vector<DataType>& src_buffer, 
-                        VkBufferUsageFlags buffer_usage, 
+    Buffer createBuffer(const std::string& name,
+                        const std::vector<DataType>& src_buffer,
+                        VkBufferUsageFlags buffer_usage,
                         VkSharingMode sharing_mode,
                         bool host_visible,
                         bool persist);
 
-    VkDeviceMemory allocateDeviceMemory(VkBuffer buffer, VkMemoryPropertyFlags properties);
+    VkDeviceMemory allocateDeviceMemory(VkMemoryRequirements mem_reqs, VkMemoryPropertyFlags properties);
     void copyBufferToGpuLocalMemory(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
 
     const uint32_t max_frames_in_flight_ = 2;
@@ -208,7 +209,10 @@ Buffer VulkanBackend::createBuffer(const std::string& name,
         mem_properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     }
 
-    VkDeviceMemory memory = allocateDeviceMemory(vk_buffer, mem_properties);
+    VkMemoryRequirements mem_reqs;
+    vkGetBufferMemoryRequirements(device_, vk_buffer, &mem_reqs);
+
+    VkDeviceMemory memory = allocateDeviceMemory(mem_reqs, mem_properties);
 
     if (memory != VK_NULL_HANDLE) {
         vkBindBufferMemory(device_, vk_buffer, memory, 0);
@@ -242,25 +246,7 @@ void VulkanBackend::updateBuffer(Buffer dst_buffer, const std::vector<DataType>&
 }
 
 template<typename DataType>
-UniformBuffer VulkanBackend::createUniformBuffer(const std::string base_name, VkShaderStageFlags flags) {
-    VkDescriptorSetLayoutBinding layout_binding{};
-    layout_binding.binding = 0;
-    layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    layout_binding.descriptorCount = 1;
-    layout_binding.stageFlags = flags;
-    layout_binding.pImmutableSamplers = nullptr; // Optional
-
-    VkDescriptorSetLayoutCreateInfo layout_info{};
-    layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layout_info.bindingCount = 1;
-    layout_info.pBindings = &layout_binding;
-
-    VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
-    if (vkCreateDescriptorSetLayout(device_, &layout_info, nullptr, &descriptor_set_layout) != VK_SUCCESS) {
-        std::cerr << "Failed to create descriptor set layout!" << std::endl;
-        return UniformBuffer{};
-    }
-    
+UniformBuffer VulkanBackend::createUniformBuffer(const std::string base_name, VkDescriptorSetLayout buffer_layout) {
     std::vector<Buffer> buffers;
     
     VkBufferCreateInfo buffer_info{};
@@ -279,7 +265,10 @@ UniformBuffer VulkanBackend::createUniformBuffer(const std::string base_name, Vk
             return UniformBuffer{};
         }
 
-        VkDeviceMemory memory = allocateDeviceMemory(vk_buffer, mem_properties);
+        VkMemoryRequirements mem_reqs;
+        vkGetBufferMemoryRequirements(device_, vk_buffer, &mem_reqs);
+
+        VkDeviceMemory memory = allocateDeviceMemory(mem_reqs, mem_properties);
 
         if (memory != VK_NULL_HANDLE) {
             vkBindBufferMemory(device_, vk_buffer, memory, 0);
@@ -299,7 +288,7 @@ UniformBuffer VulkanBackend::createUniformBuffer(const std::string base_name, Vk
         buffers.push_back(buffer);
     }
 
-    std::vector<VkDescriptorSetLayout> layouts(swap_chain_images_.size(), descriptor_set_layout);
+    std::vector<VkDescriptorSetLayout> layouts(swap_chain_images_.size(), buffer_layout);
     VkDescriptorSetAllocateInfo alloc_info{};
     alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     alloc_info.descriptorPool = descriptor_pool_;
@@ -343,7 +332,6 @@ UniformBuffer VulkanBackend::createUniformBuffer(const std::string base_name, Vk
     UniformBuffer uniform_buffer;
     uniform_buffer.name = base_name; 
     uniform_buffer.key = std::hash<std::string>{}(base_name);
-    uniform_buffer.layout = descriptor_set_layout; 
     uniform_buffer.buffers = std::move(buffers);
     uniform_buffer.descriptors = std::move(descriptor_sets);
 
