@@ -6,11 +6,13 @@
 
 #include "vulkan_app.hpp"
 #include "shader_module.hpp"
+#include "texture.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <vector>
+#include <array>
 #include <chrono>
 #include <map>
 #include <iostream>
@@ -19,9 +21,10 @@
 struct Vertex {
 	glm::vec2 pos;
 	glm::vec3 color;
+	glm::vec2 tex_coord;
 
 	static VertexFormatInfo getFormatInfo() {
-		std::vector<size_t> offsets = { offsetof(Vertex, pos), offsetof(Vertex, color) };
+		std::vector<size_t> offsets = { offsetof(Vertex, pos), offsetof(Vertex, color), offsetof(Vertex, tex_coord) };
 		return { sizeof(Vertex) , offsets };
 	}
 };
@@ -34,10 +37,10 @@ struct ModelViewProj {
 
 
 const std::vector<Vertex> vertices = {
-	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
 };
 
 const std::vector<uint32_t> indices = {
@@ -62,6 +65,7 @@ private:
 	Buffer index_buffer_;
 	std::map<std::string, std::shared_ptr<ShaderModule>> shaders_;
 	std::map<std::string, UniformBuffer> uniform_buffers_;
+	std::map<std::string, std::shared_ptr<Texture>> textures_;
 	RenderPass render_pass_;
 	GraphicsPipeline graphics_pipeline_;
 	ModelViewProj mvp_;
@@ -80,9 +84,26 @@ bool VulkanTutorial::loadAssets() {
 
 	auto fragment_shader = vulkan_backend_.createShaderModule("fragment");
 	fragment_shader->loadSpirvShader("shaders/tutorial_fs.spv");
+	
+	if (!vertex_shader->isValid() || !fragment_shader->isValid()) {
+		std::cerr << "Failed to validate shaders!" << std::endl;
+		return false;
+	}
 
 	shaders_[vertex_shader->getName()] = std::move(vertex_shader);
 	shaders_[fragment_shader->getName()] = std::move(fragment_shader);
+
+	auto texture = vulkan_backend_.createTexture("mountain_negz");
+	texture->loadImageRGBA("textures/mountain_negz.jpg");
+	
+	if (!texture->isValid()) {
+		std::cerr << "Failed to validate textures!" << std::endl;
+		return false;
+	}
+
+	texture->createSampler();
+
+	textures_[texture->getName()] = std::move(texture);
 
 ;	if (!createBuffers()) {
 		return false;
@@ -104,6 +125,7 @@ bool VulkanTutorial::setupScene() {
 
 void VulkanTutorial::cleanup() {
 	shaders_.clear();
+	textures_.clear();
 }
 
 void VulkanTutorial::updateScene() {
@@ -132,11 +154,6 @@ bool VulkanTutorial::createBuffers() {
 }
 
 bool VulkanTutorial::createGraphicsPipeline() {
-	const auto& layout_set = shaders_["vertex"]->getDescriptorSetLayouts();
-	auto buffer_name = shaders_["vertex"]->getName() + "_" + std::to_string(layout_set[0].id);
-	// we still need to know the underlying C++ type to bind to the buffer
-	uniform_buffers_[buffer_name] = vulkan_backend_.createUniformBuffer<ModelViewProj>(buffer_name, layout_set[0].layout);
-
 	render_pass_ = vulkan_backend_.createRenderPass("Main Pass");
 
 	GraphicsPipelineConfig config;
@@ -148,6 +165,17 @@ bool VulkanTutorial::createGraphicsPipeline() {
 	config.render_pass = render_pass_;
 
 	graphics_pipeline_ = vulkan_backend_.createGraphicsPipeline(config);
+
+	const auto& mvp_layout_set = shaders_["vertex"]->getDescriptorSetLayouts();
+	auto vertex_mvp_ubo = shaders_["vertex"]->getName() + "_" + std::to_string(mvp_layout_set[0].id);
+	// we still need to know the underlying C++ type to bind to the buffer(s)
+	uniform_buffers_[vertex_mvp_ubo] = vulkan_backend_.createUniformBuffer<ModelViewProj>(vertex_mvp_ubo);
+
+	const auto& sampler_layout_set = shaders_["fragment"]->getDescriptorSetLayouts();
+	auto sampler_ubo = shaders_["fragment"]->getName() + "_" + std::to_string(sampler_layout_set[0].id);
+
+	vulkan_backend_.updateDescriptorSets(uniform_buffers_[vertex_mvp_ubo], graphics_pipeline_.vk_descriptor_sets, mvp_layout_set[0].layout_bindings[0].binding);
+	textures_["mountain_negz"]->updateDescriptorSets(graphics_pipeline_.vk_descriptor_sets, sampler_layout_set[0].layout_bindings[0].binding);
 
 	return graphics_pipeline_.vk_graphics_pipeline != VK_NULL_HANDLE;
 }
@@ -182,11 +210,11 @@ bool VulkanTutorial::recordCommands() {
 
 		VkBuffer vertex_buffers[] = { vertex_buffer_.vk_buffer };
 		VkDeviceSize offsets[] = { 0 };
-
+		
 		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, vertex_buffers, offsets);
 		vkCmdBindIndexBuffer(command_buffers[i], index_buffer_.vk_buffer, 0, VK_INDEX_TYPE_UINT32);
-		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, 0, 1, &uniform_buffers_["vertex_0"].descriptors[i], 0, nullptr);
-
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, 0, 1, &graphics_pipeline_.vk_descriptor_sets[i], 0, nullptr);
+		
 		vkCmdDrawIndexed(command_buffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
 		vkCmdEndRenderPass(command_buffers[i]);

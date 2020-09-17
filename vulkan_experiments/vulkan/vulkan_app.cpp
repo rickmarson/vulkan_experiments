@@ -68,6 +68,8 @@ bool VulkanApp::run() {
 
     mainLoop();
 
+    vulkan_backend_.waitDeviceIdle();
+
     cleanup();
 
     vulkan_backend_.shutDown();

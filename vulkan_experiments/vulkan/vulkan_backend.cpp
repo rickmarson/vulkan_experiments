@@ -9,6 +9,7 @@
 #include "texture.hpp"
 
 #include <set>
+#include <array>
 #include <optional>
 #include <algorithm>
 #include <iostream>
@@ -250,8 +251,6 @@ bool VulkanBackend::startUp() {
 }
 
 void VulkanBackend::shutDown() {
-    vkDeviceWaitIdle(device_);
-
     cleanupSwapChain();
 
     for (auto& buffer : host_visible_buffers_) {
@@ -280,6 +279,10 @@ void VulkanBackend::shutDown() {
     vkDestroyInstance(vk_instance_, nullptr);
 
     swap_chain_images_.clear();
+}
+
+void VulkanBackend::waitDeviceIdle() const {
+    vkDeviceWaitIdle(device_);
 }
 
 std::shared_ptr<ShaderModule> VulkanBackend::createShaderModule(const std::string& name) const {
@@ -384,15 +387,43 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
 
     VkPipelineShaderStageCreateInfo shader_stages[] = { vert_shader_stage_info, frag_shader_stage_info };
 
-    // assemble all layout informations
-    std::vector<VkDescriptorSetLayout> all_layout_sets;
+    // assemble layout information from all shaders
+    std::vector<VkDescriptorSetLayoutBinding> all_layout_bindings;
     const auto& vertex_layouts = config.vertex->getDescriptorSetLayouts();
     for (const auto& layout : vertex_layouts) {
-        all_layout_sets.push_back(layout.layout);
+        all_layout_bindings.insert(all_layout_bindings.begin(), layout.layout_bindings.begin(), layout.layout_bindings.end());
     }
     const auto& fragment_layouts = config.fragment->getDescriptorSetLayouts();
     for (const auto& layout : fragment_layouts) {
-        all_layout_sets.push_back(layout.layout);
+        all_layout_bindings.insert(all_layout_bindings.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+    }
+
+    // create one descriptor layout for the pipeline
+    VkDescriptorSetLayoutCreateInfo layout_create_info{};
+    layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layout_create_info.bindingCount = static_cast<uint32_t>(all_layout_bindings.size());
+    layout_create_info.pBindings = all_layout_bindings.data();
+
+    VkDescriptorSetLayout descriptor_set_layout;
+    if (vkCreateDescriptorSetLayout(device_, &layout_create_info, nullptr, &descriptor_set_layout) != VK_SUCCESS) {
+        std::cerr << "Failed to create descriptor set layout!" << std::endl;
+        return GraphicsPipeline{};
+    }
+
+    // allocate descriptor sets from the pipeline descriptor layout
+
+    std::vector<VkDescriptorSetLayout> layouts(swap_chain_images_.size(), descriptor_set_layout);
+    VkDescriptorSetAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    alloc_info.descriptorPool = descriptor_pool_;
+    alloc_info.descriptorSetCount = static_cast<uint32_t>(swap_chain_images_.size());
+    alloc_info.pSetLayouts = layouts.data();
+
+    std::vector<VkDescriptorSet> descriptor_sets(swap_chain_images_.size());
+    if (vkAllocateDescriptorSets(device_, &alloc_info, descriptor_sets.data()) != VK_SUCCESS) {
+        std::cerr << "Failed to allocate descriptor sets!" << std::endl;
+        descriptor_sets.clear();
+        return GraphicsPipeline{};
     }
 
     // fixed functionality configuration
@@ -473,8 +504,8 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
 
     VkPipelineLayoutCreateInfo pipeline_layout_info{};
     pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(all_layout_sets.size());
-    pipeline_layout_info.pSetLayouts = all_layout_sets.data();
+    pipeline_layout_info.setLayoutCount = 1;
+    pipeline_layout_info.pSetLayouts = &descriptor_set_layout;
     pipeline_layout_info.pushConstantRangeCount = 0; // Optional
     pipeline_layout_info.pPushConstantRanges = nullptr; // Optional
 
@@ -509,7 +540,14 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
     }
 
     auto key = std::hash<std::string>{}(config.name);
-    GraphicsPipeline graphics_pipeline{ config.name, key, pipeline_layout, vk_pipeline };
+    GraphicsPipeline graphics_pipeline{ 
+        config.name, 
+        key, 
+        pipeline_layout, 
+        descriptor_set_layout, 
+        vk_pipeline, 
+        std::move(descriptor_sets) 
+    };
 
     pipelines_.insert({ key, graphics_pipeline });
 
@@ -585,6 +623,39 @@ VkResult VulkanBackend::submitCommands() {
     current_frame_ = (current_frame_ + 1) % max_frames_in_flight_;
 
     return result;
+}
+
+VkCommandBuffer VulkanBackend::beginSingleTimeCommands() {
+    VkCommandBufferAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    alloc_info.commandPool = command_pool_;
+    alloc_info.commandBufferCount = 1;
+
+    VkCommandBuffer command_buffer;
+    vkAllocateCommandBuffers(device_, &alloc_info, &command_buffer);
+
+    VkCommandBufferBeginInfo begin_info{};
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    vkBeginCommandBuffer(command_buffer, &begin_info);
+
+    return command_buffer;
+}
+
+void VulkanBackend::endSingleTimeCommands(VkCommandBuffer command_buffer) {
+    vkEndCommandBuffer(command_buffer);
+
+    VkSubmitInfo submit_info{};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffer;
+
+    vkQueueSubmit(graphics_queue_, 1, &submit_info, VK_NULL_HANDLE);
+    vkQueueWaitIdle(graphics_queue_);
+
+    vkFreeCommandBuffers(device_, command_pool_, 1, &command_buffer);
 }
 
 bool VulkanBackend::initVulkan() {
@@ -663,7 +734,8 @@ bool VulkanBackend::isDeviceSuitable(VkPhysicalDevice device) {
     }
 
     return device_properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
-        device_features.geometryShader && indices.isValid() && extensions_supported && swap_chain_adequate;
+        device_features.geometryShader && indices.isValid() && extensions_supported && swap_chain_adequate
+        && device_features.samplerAnisotropy;
 }
 
 bool VulkanBackend::createLogicalDevice() {
@@ -683,7 +755,7 @@ bool VulkanBackend::createLogicalDevice() {
     }
 
     VkPhysicalDeviceFeatures device_features{};
-    // TODO fill in features
+    device_features.samplerAnisotropy = VK_TRUE;
 
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -773,23 +845,8 @@ bool VulkanBackend::createImageViews() {
     swap_chain_image_views_.resize(swap_chain_images_.size());
 
     for (size_t i = 0; i < swap_chain_images_.size(); i++) {
-        VkImageViewCreateInfo create_info{};
-        create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        create_info.image = swap_chain_images_[i];
-        create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        create_info.format = swap_chain_image_format_;
-        create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-        create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        create_info.subresourceRange.baseMipLevel = 0;
-        create_info.subresourceRange.levelCount = 1;
-        create_info.subresourceRange.baseArrayLayer = 0;
-        create_info.subresourceRange.layerCount = 1;
-
-        if (vkCreateImageView(device_, &create_info, nullptr, &swap_chain_image_views_[i]) != VK_SUCCESS) {
-            std::cerr << "Failed to create image views!" << std::endl;
+        swap_chain_image_views_[i] = createImageView(swap_chain_images_[i], swap_chain_image_format_);
+        if (swap_chain_image_views_[i] == VK_NULL_HANDLE) {
             return false;
         }
     }
@@ -831,14 +888,16 @@ bool VulkanBackend::createCommandBuffers() {
 }
 
 bool VulkanBackend::createDescriptorPool() {
-    VkDescriptorPoolSize pool_size{};
-    pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    pool_size.descriptorCount = static_cast<uint32_t>(swap_chain_images_.size());
+    std::array<VkDescriptorPoolSize, 2> pool_sizes{};
+    pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    pool_sizes[0].descriptorCount = static_cast<uint32_t>(swap_chain_images_.size());  // does not scale to multiple uniform buffers per shader?
+    pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    pool_sizes[1].descriptorCount = static_cast<uint32_t>(swap_chain_images_.size());
 
     VkDescriptorPoolCreateInfo pool_info{};
     pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    pool_info.poolSizeCount = 1;
-    pool_info.pPoolSizes = &pool_size;
+    pool_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
+    pool_info.pPoolSizes = pool_sizes.data();
     pool_info.maxSets = static_cast<uint32_t>(swap_chain_images_.size())* max_descriptor_sets_;
 
     if (vkCreateDescriptorPool(device_, &pool_info, nullptr, &descriptor_pool_) != VK_SUCCESS) {
@@ -897,8 +956,10 @@ void VulkanBackend::cleanupSwapChain() {
     vkFreeCommandBuffers(device_, command_pool_, static_cast<uint32_t>(command_buffers_.size()), command_buffers_.data());
 
     for (auto& pipeline : pipelines_) {
+        vkDestroyDescriptorSetLayout(device_, pipeline.second.vk_descriptor_set_layout, nullptr);
         vkDestroyPipeline(device_, pipeline.second.vk_graphics_pipeline, nullptr);
         vkDestroyPipelineLayout(device_, pipeline.second.vk_pipeline_layout, nullptr);
+        pipeline.second.vk_descriptor_sets.clear();
     }
 
     for (auto& render_pass : render_passes_) {
@@ -952,38 +1013,15 @@ VkDeviceMemory VulkanBackend::allocateDeviceMemory(VkMemoryRequirements mem_reqs
 }
 
 void VulkanBackend::copyBufferToGpuLocalMemory(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size) {
-    VkCommandBufferAllocateInfo alloc_info{};
-    alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    alloc_info.commandPool = command_pool_;
-    alloc_info.commandBufferCount = 1;
-
-    VkCommandBuffer command_buffer;
-    vkAllocateCommandBuffers(device_, &alloc_info, &command_buffer);
-
-    VkCommandBufferBeginInfo begin_info{};
-    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-    vkBeginCommandBuffer(command_buffer, &begin_info);
-
+    VkCommandBuffer command_buffer = beginSingleTimeCommands();
+   
     VkBufferCopy copy_region{};
     copy_region.srcOffset = 0; // Optional
     copy_region.dstOffset = 0; // Optional
     copy_region.size = size;
     vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
 
-    vkEndCommandBuffer(command_buffer);
-
-    VkSubmitInfo submit_info{};
-    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &command_buffer;
-
-    vkQueueSubmit(graphics_queue_, 1, &submit_info, VK_NULL_HANDLE);
-    vkQueueWaitIdle(graphics_queue_);
-
-    vkFreeCommandBuffers(device_, command_pool_, 1, &command_buffer);
+    endSingleTimeCommands(command_buffer);
 }
 
 Buffer VulkanBackend::createIndexBuffer(const std::string& name, const std::vector<uint32_t>& src_buffer) {
@@ -994,4 +1032,51 @@ Buffer VulkanBackend::createIndexBuffer(const std::string& name, const std::vect
     vkDestroyBuffer(device_, staging_buffer.vk_buffer, nullptr);
     vkFreeMemory(device_, staging_buffer.vk_buffer_memory, nullptr);
     return index_buffer;
+}
+
+void VulkanBackend::updateDescriptorSets(const UniformBuffer& buffer, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding_point) {
+    for (size_t i = 0; i < swap_chain_images_.size(); i++) {
+        VkDescriptorBufferInfo buffer_info{};
+        buffer_info.buffer = buffer.buffers[i].vk_buffer;
+        buffer_info.offset = 0;
+        buffer_info.range = buffer.buffer_size;
+
+        VkWriteDescriptorSet descriptor_write{};
+        descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor_write.dstSet = descriptor_sets[i];
+        descriptor_write.dstBinding = binding_point;
+        descriptor_write.dstArrayElement = 0;
+        descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptor_write.descriptorCount = 1;
+        descriptor_write.pBufferInfo = &buffer_info;
+        descriptor_write.pImageInfo = nullptr; // Optional
+        descriptor_write.pTexelBufferView = nullptr; // Optional
+
+        vkUpdateDescriptorSets(device_, 1, &descriptor_write, 0, nullptr);
+    }
+}
+
+VkImageView VulkanBackend::createImageView(VkImage image, VkFormat format) {
+    VkImageViewCreateInfo view_info{};
+    view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    view_info.image = image;
+    view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view_info.format = format;
+    view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+    view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+    view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+    view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+    view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    view_info.subresourceRange.baseMipLevel = 0;
+    view_info.subresourceRange.levelCount = 1;
+    view_info.subresourceRange.baseArrayLayer = 0;
+    view_info.subresourceRange.layerCount = 1;
+
+    VkImageView image_view;
+    if (vkCreateImageView(device_, &view_info, nullptr, &image_view) != VK_SUCCESS) {
+        std::cerr << "Failed to create texture image view!" << std::endl;
+        return VK_NULL_HANDLE;
+    }
+
+    return image_view;
 }

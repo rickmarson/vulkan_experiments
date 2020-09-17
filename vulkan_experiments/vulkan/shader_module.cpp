@@ -245,12 +245,6 @@ void ShaderModule::extractUniformBufferLayouts(SpvReflectShaderModule& reflect_m
         vk_set.create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         vk_set.create_info.bindingCount = src_set.binding_count;
         vk_set.create_info.pBindings = vk_set.layout_bindings.data();
-
-        if (vkCreateDescriptorSetLayout(device_, &vk_set.create_info, nullptr, &vk_set.layout) != VK_SUCCESS) {
-            std::cerr << "Failed to create descriptor set layout!" << std::endl;
-            cleanup();
-            return;
-        }
     }
 }
 
@@ -302,9 +296,9 @@ void ShaderModule::extractInputVariables(SpvReflectShaderModule& reflect_module)
 void ShaderModule::cleanup() {
     vkDestroyShaderModule(device_, vk_shader_, nullptr);
     vk_shader_ = VK_NULL_HANDLE;
-    for (auto& set : layout_sets_) {
+    /*for (auto& set : layout_sets_) {
         vkDestroyDescriptorSetLayout(device_, set.layout, nullptr);
-    }
+    }*/
     layout_sets_.clear();
 }
 

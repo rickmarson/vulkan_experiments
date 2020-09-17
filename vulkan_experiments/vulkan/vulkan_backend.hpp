@@ -49,7 +49,9 @@ struct GraphicsPipeline {
     size_t key = 0;
 
     VkPipelineLayout vk_pipeline_layout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout vk_descriptor_set_layout = VK_NULL_HANDLE;
     VkPipeline vk_graphics_pipeline = VK_NULL_HANDLE;
+    std::vector<VkDescriptorSet> vk_descriptor_sets;
 };
 
 struct Buffer {
@@ -64,9 +66,9 @@ struct Buffer {
 struct UniformBuffer {
     std::string name;
     size_t key = 0;
+    size_t buffer_size = 0;
 
     std::vector<Buffer> buffers;  // one per command buffer / swap chain image
-    std::vector<VkDescriptorSet> descriptors; // one per command buffer / swap chain image
 };
 
 // VulkanBackend
@@ -82,9 +84,11 @@ public:
 
     void resetWindowSwapExtent(VkExtent2D extent) { window_swap_extent_ = extent; }
     VkExtent2D getSwapChainExtent() const { return window_swap_extent_; }
+    uint32_t getSwapChainSize() const { return swap_chain_images_.size(); }
 
     bool startUp();
     void shutDown();
+    void waitDeviceIdle() const;
 
     bool recreateSwapChain();
     
@@ -103,11 +107,16 @@ public:
     void updateBuffer(Buffer dst_buffer, const std::vector<DataType>& src_buffer);
 
     template<typename DataType>
-    UniformBuffer createUniformBuffer(const std::string base_name, VkDescriptorSetLayout buffer_layout);
+    UniformBuffer createUniformBuffer(const std::string base_name);
+    
+    void updateDescriptorSets(const UniformBuffer& buffer, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding_point);
 
     std::vector<VkCommandBuffer>& getCommandBuffers() { return command_buffers_; }
 
     VkResult submitCommands();
+
+    VkCommandBuffer beginSingleTimeCommands();
+    void endSingleTimeCommands(VkCommandBuffer command_buffer);
 
 private:
     friend class Texture;
@@ -136,6 +145,9 @@ private:
 
     VkDeviceMemory allocateDeviceMemory(VkMemoryRequirements mem_reqs, VkMemoryPropertyFlags properties);
     void copyBufferToGpuLocalMemory(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
+    VkImageView createImageView(VkImage image, VkFormat format);
+
+    VkDescriptorPool getDescriptorPool() { return descriptor_pool_; }
 
     const uint32_t max_frames_in_flight_ = 2;
     const uint32_t max_descriptor_sets_ = 5; 
@@ -246,7 +258,7 @@ void VulkanBackend::updateBuffer(Buffer dst_buffer, const std::vector<DataType>&
 }
 
 template<typename DataType>
-UniformBuffer VulkanBackend::createUniformBuffer(const std::string base_name, VkDescriptorSetLayout buffer_layout) {
+UniformBuffer VulkanBackend::createUniformBuffer(const std::string base_name) {
     std::vector<Buffer> buffers;
     
     VkBufferCreateInfo buffer_info{};
@@ -288,52 +300,11 @@ UniformBuffer VulkanBackend::createUniformBuffer(const std::string base_name, Vk
         buffers.push_back(buffer);
     }
 
-    std::vector<VkDescriptorSetLayout> layouts(swap_chain_images_.size(), buffer_layout);
-    VkDescriptorSetAllocateInfo alloc_info{};
-    alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    alloc_info.descriptorPool = descriptor_pool_;
-    alloc_info.descriptorSetCount = static_cast<uint32_t>(swap_chain_images_.size());
-    alloc_info.pSetLayouts = layouts.data();
-
-    std::vector<VkDescriptorSet> descriptor_sets(swap_chain_images_.size());
-    if (vkAllocateDescriptorSets(device_, &alloc_info, descriptor_sets.data()) != VK_SUCCESS) {
-        std::cerr << "Failed to allocate descriptor sets!" << std::endl;
-        descriptor_sets.clear();
-
-        for (auto& buffer : buffers) {
-            vkDestroyBuffer(device_, buffer.vk_buffer, nullptr);
-            vkFreeMemory(device_, buffer.vk_buffer_memory, nullptr);
-        }
-        buffers.clear();
-
-        return UniformBuffer{};
-    }
-
-    for (size_t i = 0; i < swap_chain_images_.size(); i++) {
-        VkDescriptorBufferInfo buffer_info{};
-        buffer_info.buffer = buffers[i].vk_buffer;
-        buffer_info.offset = 0;
-        buffer_info.range = sizeof(DataType);
-
-        VkWriteDescriptorSet descriptor_write{};
-        descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptor_write.dstSet = descriptor_sets[i];
-        descriptor_write.dstBinding = 0;
-        descriptor_write.dstArrayElement = 0;
-        descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptor_write.descriptorCount = 1;
-        descriptor_write.pBufferInfo = &buffer_info;
-        descriptor_write.pImageInfo = nullptr; // Optional
-        descriptor_write.pTexelBufferView = nullptr; // Optional
-
-        vkUpdateDescriptorSets(device_, 1, &descriptor_write, 0, nullptr);
-    }
-
     UniformBuffer uniform_buffer;
     uniform_buffer.name = base_name; 
     uniform_buffer.key = std::hash<std::string>{}(base_name);
+    uniform_buffer.buffer_size = sizeof(DataType);
     uniform_buffer.buffers = std::move(buffers);
-    uniform_buffer.descriptors = std::move(descriptor_sets);
 
     uniform_buffers_.insert({ uniform_buffer.key, uniform_buffer });
     return uniform_buffer;

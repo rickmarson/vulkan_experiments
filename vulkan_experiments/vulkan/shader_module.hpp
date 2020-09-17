@@ -15,14 +15,14 @@
 
 struct SpvReflectShaderModule;
 
-using VertexFormatInfo = std::pair<size_t, std::vector<size_t>>;
-
 struct DescriptorSetLayouts {
 	uint32_t id;
 	VkDescriptorSetLayoutCreateInfo create_info;
 	VkDescriptorSetLayout layout = VK_NULL_HANDLE;
 	std::vector<VkDescriptorSetLayoutBinding> layout_bindings;
 };
+
+using VertexFormatInfo = std::pair<size_t, std::vector<size_t>>;
 
 class ShaderModule {
 public:
