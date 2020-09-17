@@ -7,12 +7,10 @@
 #include "vulkan_backend.hpp"
 #include "shader_module.hpp"
 #include "texture.hpp"
+#include "mesh.hpp"
 
-#include <set>
-#include <array>
 #include <optional>
 #include <algorithm>
-#include <iostream>
 
 // Additional Helper Functions
 
@@ -291,6 +289,10 @@ std::shared_ptr<ShaderModule> VulkanBackend::createShaderModule(const std::strin
 
 std::shared_ptr<Texture> VulkanBackend::createTexture(const std::string& name) {
     return Texture::createTexture(name, device_, this);
+}
+
+std::shared_ptr<Mesh> VulkanBackend::createMesh(const std::string& name) {
+    return Mesh::createMesh(name, this);
 }
 
 RenderPass VulkanBackend::createRenderPass(const std::string& name) {

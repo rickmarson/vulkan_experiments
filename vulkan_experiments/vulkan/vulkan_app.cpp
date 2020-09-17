@@ -11,7 +11,6 @@
 #include <glm/vec4.hpp>
 #include <glm/mat4x4.hpp>
 
-#include <iostream>
 #include <algorithm>
 
 // Additional Helper Functions

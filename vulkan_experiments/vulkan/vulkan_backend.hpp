@@ -6,16 +6,12 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
-#include <unordered_map>
-#include <utility>
-#include <vector>
-#include <string>
-#include <functional>
+#include "common_definitions.hpp"
 
 // Interfaces
 class ShaderModule;
 class Texture;
+class Mesh;
 
 struct SwapChainSupportDetails {
     VkSurfaceCapabilitiesKHR capabilities{};
@@ -54,23 +50,6 @@ struct GraphicsPipeline {
     std::vector<VkDescriptorSet> vk_descriptor_sets;
 };
 
-struct Buffer {
-    std::string name;
-    size_t key = 0;
-   
-    VkBufferUsageFlags type = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
-    VkBuffer vk_buffer = VK_NULL_HANDLE;
-    VkDeviceMemory vk_buffer_memory = VK_NULL_HANDLE;
-};
-
-struct UniformBuffer {
-    std::string name;
-    size_t key = 0;
-    size_t buffer_size = 0;
-
-    std::vector<Buffer> buffers;  // one per command buffer / swap chain image
-};
-
 // VulkanBackend
 
 class VulkanBackend {
@@ -94,6 +73,7 @@ public:
     
     std::shared_ptr<ShaderModule> createShaderModule(const std::string& name) const;
     std::shared_ptr<Texture> createTexture(const std::string& name);
+    std::shared_ptr<Mesh> createMesh(const std::string& name);
 
     RenderPass createRenderPass(const std::string& name);
     GraphicsPipeline createGraphicsPipeline(const GraphicsPipelineConfig& config);

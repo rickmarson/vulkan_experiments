@@ -7,14 +7,9 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
-
-#include <string>
-#include <vector>
-#include <memory>
+#include "common_definitions.hpp"
 
 class VulkanBackend;
-
 
 class Texture {
 public:

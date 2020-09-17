@@ -9,8 +9,6 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-#include <iostream>
-
 
 std::shared_ptr<Texture> Texture::createTexture(const std::string& name, VkDevice device, VulkanBackend* backend) {
 	return std::make_shared<Texture>(name, device, backend);

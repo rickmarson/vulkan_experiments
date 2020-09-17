@@ -13,6 +13,7 @@ include_directories(${Vulkan_INCLUDE_DIRS})
 include_directories("utilities/glm")
 include_directories("utilities/glfw/include")
 include_directories("utilities/stb")
+include_directories("utilities/tinyobjloader")
 include_directories("utilities/SPIRV-Reflect")
 include_directories("vulkan")
 

@@ -6,6 +6,6 @@
     "\\vulkan_experiments\\shaders",
     "\\vulkan_experiments\\vulkan"
   ],
-  "SelectedNode": "\\vulkan_experiments\\textures",
+  "SelectedNode": "\\vulkan_experiments\\vulkan\\vulkan_backend.cpp",
   "PreviewInSolutionExplorer": false
 }

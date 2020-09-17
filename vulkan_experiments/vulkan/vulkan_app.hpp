@@ -8,7 +8,6 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-#include <vector>
 
 #include "vulkan_backend.hpp"
 
@@ -25,7 +24,6 @@ protected:
     bool recreateSwapChain();
 
     virtual bool createGraphicsPipeline() = 0;
-    virtual bool createBuffers() = 0;
     virtual bool recordCommands() = 0;
 
     // actual rendering code

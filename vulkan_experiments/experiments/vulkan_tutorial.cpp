@@ -7,46 +7,18 @@
 #include "vulkan_app.hpp"
 #include "shader_module.hpp"
 #include "texture.hpp"
+#include "mesh.hpp"
 
-#include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include <vector>
-#include <array>
 #include <chrono>
-#include <map>
-#include <iostream>
 
 // Declarations
-struct Vertex {
-	glm::vec2 pos;
-	glm::vec3 color;
-	glm::vec2 tex_coord;
-
-	static VertexFormatInfo getFormatInfo() {
-		std::vector<size_t> offsets = { offsetof(Vertex, pos), offsetof(Vertex, color), offsetof(Vertex, tex_coord) };
-		return { sizeof(Vertex) , offsets };
-	}
-};
-
 struct ModelViewProj {
 	glm::mat4 model;
 	glm::mat4 view;
 	glm::mat4 proj;
 };
-
-
-const std::vector<Vertex> vertices = {
-	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-};
-
-const std::vector<uint32_t> indices = {
-	0, 1, 2, 2, 3, 0
-};
-
 
 class VulkanTutorial : public VulkanApp {
 public:
@@ -55,17 +27,14 @@ public:
 private:
 	virtual bool loadAssets() final;
 	virtual bool setupScene() final;
-	virtual bool createBuffers() final;
 	virtual bool createGraphicsPipeline() final;
 	virtual bool recordCommands() final;
 	virtual void updateScene() final;
 	virtual void cleanup() final;
 
-	Buffer vertex_buffer_;
-	Buffer index_buffer_;
 	std::map<std::string, std::shared_ptr<ShaderModule>> shaders_;
 	std::map<std::string, UniformBuffer> uniform_buffers_;
-	std::map<std::string, std::shared_ptr<Texture>> textures_;
+	std::map<std::string, std::shared_ptr<Mesh>> meshes_;
 	RenderPass render_pass_;
 	GraphicsPipeline graphics_pipeline_;
 	ModelViewProj mvp_;
@@ -93,21 +62,12 @@ bool VulkanTutorial::loadAssets() {
 	shaders_[vertex_shader->getName()] = std::move(vertex_shader);
 	shaders_[fragment_shader->getName()] = std::move(fragment_shader);
 
-	auto texture = vulkan_backend_.createTexture("mountain_negz");
-	texture->loadImageRGBA("textures/mountain_negz.jpg");
-	
-	if (!texture->isValid()) {
-		std::cerr << "Failed to validate textures!" << std::endl;
+	auto mesh = vulkan_backend_.createMesh("viking_room");
+	if (!mesh->loadObjModel("meshes/viking_room.obj")) {
 		return false;
 	}
 
-	texture->createSampler();
-
-	textures_[texture->getName()] = std::move(texture);
-
-;	if (!createBuffers()) {
-		return false;
-	}
+	meshes_[mesh->getName()] = std::move(mesh);
 
 	return true;
 }
@@ -124,8 +84,8 @@ bool VulkanTutorial::setupScene() {
 }
 
 void VulkanTutorial::cleanup() {
+	meshes_.clear();
 	shaders_.clear();
-	textures_.clear();
 }
 
 void VulkanTutorial::updateScene() {
@@ -145,12 +105,6 @@ void VulkanTutorial::updateScene() {
 	for (size_t i = 0; i < command_buffers.size(); i++) {
 		vulkan_backend_.updateBuffer<ModelViewProj>(uniform_buffers_["vertex_0"].buffers[i], { mvp_ });
 	}
-}
-
-bool VulkanTutorial::createBuffers() {
-	vertex_buffer_ = vulkan_backend_.createVertexBuffer<Vertex>("triangle_vertices", vertices);
-	index_buffer_ = vulkan_backend_.createIndexBuffer("triangle_indices", indices);
-	return vertex_buffer_.vk_buffer != VK_NULL_HANDLE && index_buffer_.vk_buffer != VK_NULL_HANDLE;
 }
 
 bool VulkanTutorial::createGraphicsPipeline() {
@@ -175,7 +129,7 @@ bool VulkanTutorial::createGraphicsPipeline() {
 	auto sampler_ubo = shaders_["fragment"]->getName() + "_" + std::to_string(sampler_layout_set[0].id);
 
 	vulkan_backend_.updateDescriptorSets(uniform_buffers_[vertex_mvp_ubo], graphics_pipeline_.vk_descriptor_sets, mvp_layout_set[0].layout_bindings[0].binding);
-	textures_["mountain_negz"]->updateDescriptorSets(graphics_pipeline_.vk_descriptor_sets, sampler_layout_set[0].layout_bindings[0].binding);
+	meshes_["viking_room"]->getDiffuseTexture()->updateDescriptorSets(graphics_pipeline_.vk_descriptor_sets, sampler_layout_set[0].layout_bindings[0].binding);
 
 	return graphics_pipeline_.vk_graphics_pipeline != VK_NULL_HANDLE;
 }
@@ -208,14 +162,14 @@ bool VulkanTutorial::recordCommands() {
 		vkCmdBeginRenderPass(command_buffers[i], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 		vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_graphics_pipeline);
 
-		VkBuffer vertex_buffers[] = { vertex_buffer_.vk_buffer };
 		VkDeviceSize offsets[] = { 0 };
-		
-		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, vertex_buffers, offsets);
-		vkCmdBindIndexBuffer(command_buffers[i], index_buffer_.vk_buffer, 0, VK_INDEX_TYPE_UINT32);
+		auto& mesh = meshes_["viking_room"];
+
+		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &mesh->getVertexBuffer().vk_buffer, offsets);
+		vkCmdBindIndexBuffer(command_buffers[i], mesh->getIndexBuffer().vk_buffer, 0, VK_INDEX_TYPE_UINT32);
 		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, 0, 1, &graphics_pipeline_.vk_descriptor_sets[i], 0, nullptr);
 		
-		vkCmdDrawIndexed(command_buffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+		vkCmdDrawIndexed(command_buffers[i], mesh->getIndexCount(), 1, 0, 0, 0);
 
 		vkCmdEndRenderPass(command_buffers[i]);
 		if (vkEndCommandBuffer(command_buffers[i]) != VK_SUCCESS) {
