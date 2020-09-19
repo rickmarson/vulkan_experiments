@@ -1,5 +1,5 @@
 /*
-* vulkan_app.hpp
+* shader_module.hpp
 *
 * Copyright (C) 2020 Riccardo Marson
 */
@@ -7,11 +7,7 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
-
-#include <string>
-#include <vector>
-#include <memory>
+#include "common_definitions.hpp"
 
 struct SpvReflectShaderModule;
 
@@ -21,8 +17,6 @@ struct DescriptorSetLayouts {
 	VkDescriptorSetLayout layout = VK_NULL_HANDLE;
 	std::vector<VkDescriptorSetLayoutBinding> layout_bindings;
 };
-
-using VertexFormatInfo = std::pair<size_t, std::vector<size_t>>;
 
 class ShaderModule {
 public:
@@ -40,6 +34,7 @@ public:
 	VkVertexInputBindingDescription getInputBindingDescription() const { return input_binding_description_; }  
 	const std::vector<VkVertexInputAttributeDescription>& getInputAttributes() { return input_attributes_; }
 	bool isVertexFormatCompatible(const VertexFormatInfo& format_info) const;
+	const DescriptorSetMetadata& getDescriptorsMetadata() const { return descriptors_metadata_; }
 
 private:	
 	void extractUniformBufferLayouts(SpvReflectShaderModule& reflect_module);
@@ -53,4 +48,5 @@ private:
 	std::vector<DescriptorSetLayouts> layout_sets_;
 	VkVertexInputBindingDescription input_binding_description_ = {};
 	std::vector<VkVertexInputAttributeDescription> input_attributes_;
+	DescriptorSetMetadata descriptors_metadata_;
 };

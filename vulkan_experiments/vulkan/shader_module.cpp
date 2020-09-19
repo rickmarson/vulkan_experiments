@@ -1,5 +1,5 @@
 /*
-* vulkan_app.hpp
+* shader_module.hpp
 *
 * Copyright (C) 2020 Riccardo Marson
 */
@@ -228,6 +228,8 @@ void ShaderModule::extractUniformBufferLayouts(SpvReflectShaderModule& reflect_m
 
         DescriptorSetLayouts& vk_set = layout_sets_[i];
         vk_set.layout_bindings.resize(src_set.binding_count);
+
+        auto bindings_map = BindingsMap{};
         
         for (uint32_t j = 0; j < src_set.binding_count; ++j) {
             const SpvReflectDescriptorBinding& src_binding = *(src_set.bindings[j]);
@@ -240,11 +242,16 @@ void ShaderModule::extractUniformBufferLayouts(SpvReflectShaderModule& reflect_m
                 vk_layout_binding.descriptorCount *= src_binding.array.dims[k];
             }
             vk_layout_binding.stageFlags = vk_shader_stage_;
+
+            bindings_map[src_binding.name] = src_binding.binding;
         }
+
         vk_set.id = src_set.set;
         vk_set.create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         vk_set.create_info.bindingCount = src_set.binding_count;
         vk_set.create_info.pBindings = vk_set.layout_bindings.data();
+
+        descriptors_metadata_.set_bindings[src_set.set] = std::move(bindings_map);
     }
 }
 

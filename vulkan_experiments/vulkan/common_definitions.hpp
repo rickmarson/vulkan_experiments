@@ -39,17 +39,55 @@ struct UniformBuffer {
     std::vector<Buffer> buffers;  // one per command buffer / swap chain image
 };
 
-struct Vertex {
-	glm::vec3 pos;
-	glm::vec3 color;
-	glm::vec2 tex_coord;
-
-	static VertexFormatInfo getFormatInfo() {
-		std::vector<size_t> offsets = { offsetof(Vertex, pos), offsetof(Vertex, color), offsetof(Vertex, tex_coord) };
-		return { sizeof(Vertex) , offsets };
-	}
-
-	bool operator==(const Vertex& other) const {
-		return pos == other.pos && color == other.color && tex_coord == other.tex_coord;
-	}
+struct SwapChainSupportDetails {
+    VkSurfaceCapabilitiesKHR capabilities{};
+    std::vector<VkSurfaceFormatKHR> formats;
+    std::vector<VkPresentModeKHR> present_modes;
 };
+
+struct RenderPass {
+    std::string name;
+    size_t key = 0;
+    VkRenderPass vk_render_pass = VK_NULL_HANDLE;
+
+    std::vector<VkFramebuffer> swap_chain_framebuffers;
+};
+
+using BindingsMap = std::map<std::string, uint32_t>;
+struct DescriptorSetMetadata {
+    std::map<uint32_t, BindingsMap> set_bindings;
+};
+
+// shader interfaces
+// these must match the format, names and binding points defined in the shader code
+
+struct Vertex {
+    glm::vec3 pos;
+    glm::vec3 color;
+    glm::vec2 tex_coord;
+
+    static VertexFormatInfo getFormatInfo() {
+        std::vector<size_t> offsets = { offsetof(Vertex, pos), offsetof(Vertex, color), offsetof(Vertex, tex_coord) };
+        return { sizeof(Vertex) , offsets };
+    }
+
+    bool operator==(const Vertex& other) const {
+        return pos == other.pos && color == other.color && tex_coord == other.tex_coord;
+    }
+};
+
+struct SceneData {
+    glm::mat4 view;
+    glm::mat4 proj;
+};
+
+const uint32_t SCENE_UNIFORM_SET_ID = 0;
+const std::string SCENE_DATA_BINDING_NAME = "scene";  // holds scene-wide information (view, projection, lights, etc..)
+
+struct ModelData {
+    glm::mat4 transform_matrix;
+};
+
+const uint32_t MODEL_UNIFORM_SET_ID = 1;
+const std::string MODEL_DATA_BINDING_NAME = "model";  // holds model-specific numeric data (model transform, etc...)
+const std::string DIFFUSE_SAMPLER_BINDING_NAME = "diffuse_sampler";  // holds the diffuse texture of the surface / mesh being drawn

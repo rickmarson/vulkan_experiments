@@ -1,5 +1,5 @@
 /*
-* vulkan_app.hpp
+* vulkan_backend.hpp
 *
 * Copyright (C) 2020 Riccardo Marson
 */
@@ -12,20 +12,6 @@
 class ShaderModule;
 class Texture;
 class Mesh;
-
-struct SwapChainSupportDetails {
-    VkSurfaceCapabilitiesKHR capabilities{};
-    std::vector<VkSurfaceFormatKHR> formats;
-    std::vector<VkPresentModeKHR> present_modes;
-};
-
-struct RenderPass {
-    std::string name;
-    size_t key = 0;
-    VkRenderPass vk_render_pass = VK_NULL_HANDLE;
-    
-    std::vector<VkFramebuffer> swap_chain_framebuffers;
-};
 
 struct GraphicsPipelineConfig {
     std::string name;
@@ -45,9 +31,10 @@ struct GraphicsPipeline {
     size_t key = 0;
 
     VkPipelineLayout vk_pipeline_layout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout vk_descriptor_set_layout = VK_NULL_HANDLE;
     VkPipeline vk_graphics_pipeline = VK_NULL_HANDLE;
-    std::vector<VkDescriptorSet> vk_descriptor_sets;
+    std::map<uint32_t, VkDescriptorSetLayout> vk_descriptor_set_layouts;
+
+    DescriptorSetMetadata descriptor_metadata;
 };
 
 // VulkanBackend
@@ -64,6 +51,8 @@ public:
     void resetWindowSwapExtent(VkExtent2D extent) { window_swap_extent_ = extent; }
     VkExtent2D getSwapChainExtent() const { return window_swap_extent_; }
     uint32_t getSwapChainSize() const { return swap_chain_images_.size(); }
+    VkDescriptorPool getDescriptorPool() { return descriptor_pool_; }
+    VkDevice getDevice() { return device_; }
 
     bool startUp();
     void shutDown();
@@ -89,7 +78,7 @@ public:
     template<typename DataType>
     UniformBuffer createUniformBuffer(const std::string base_name);
     
-    void updateDescriptorSets(const UniformBuffer& buffer, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding_point);
+    void updateDescriptorSets(const UniformBuffer& buffer, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding);
 
     std::vector<VkCommandBuffer>& getCommandBuffers() { return command_buffers_; }
 
@@ -126,8 +115,6 @@ private:
     VkDeviceMemory allocateDeviceMemory(VkMemoryRequirements mem_reqs, VkMemoryPropertyFlags properties);
     void copyBufferToGpuLocalMemory(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
     VkImageView createImageView(VkImage image, VkFormat format);
-
-    VkDescriptorPool getDescriptorPool() { return descriptor_pool_; }
 
     const uint32_t max_frames_in_flight_ = 2;
     const uint32_t max_descriptor_sets_ = 5; 

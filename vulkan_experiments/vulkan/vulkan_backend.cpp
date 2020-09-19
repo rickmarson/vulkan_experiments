@@ -1,5 +1,5 @@
 /*
-* vulkan_app.hpp
+* vulkan_backend.hpp
 *
 * Copyright (C) 2020 Riccardo Marson
 */
@@ -390,42 +390,64 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
     VkPipelineShaderStageCreateInfo shader_stages[] = { vert_shader_stage_info, frag_shader_stage_info };
 
     // assemble layout information from all shaders
-    std::vector<VkDescriptorSetLayoutBinding> all_layout_bindings;
+    DescriptorSetMetadata pipeline_descriptor_metadata{};
+    std::map<uint32_t, std::vector<VkDescriptorSetLayoutBinding>> layout_bindings_by_set;
+
     const auto& vertex_layouts = config.vertex->getDescriptorSetLayouts();
     for (const auto& layout : vertex_layouts) {
-        all_layout_bindings.insert(all_layout_bindings.begin(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+        if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
+            layout_bindings_by_set[layout.id] = layout.layout_bindings;
+        }
+        else {
+            auto& bindings_array = layout_bindings_by_set[layout.id];
+            bindings_array.insert(bindings_array.begin(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+        }
     }
+    const auto& vertex_descriptor_metadata = config.vertex->getDescriptorsMetadata();
+    for (const auto& meta : vertex_descriptor_metadata.set_bindings) {
+        pipeline_descriptor_metadata.set_bindings[meta.first] = meta.second;
+    }
+
     const auto& fragment_layouts = config.fragment->getDescriptorSetLayouts();
     for (const auto& layout : fragment_layouts) {
-        all_layout_bindings.insert(all_layout_bindings.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+        if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
+            layout_bindings_by_set[layout.id] = layout.layout_bindings;
+        }
+        else {
+            auto& bindings_array = layout_bindings_by_set[layout.id];
+            bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+        }
+    }
+    const auto& fragment_descriptor_metadata = config.fragment->getDescriptorsMetadata();
+    for (const auto& meta : fragment_descriptor_metadata.set_bindings) {
+        auto& bindings_map = pipeline_descriptor_metadata.set_bindings[meta.first];
+        for (const auto& src_binding : meta.second) {
+            bindings_map.insert(src_binding);
+        }
     }
 
-    // create one descriptor layout for the pipeline
-    VkDescriptorSetLayoutCreateInfo layout_create_info{};
-    layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layout_create_info.bindingCount = static_cast<uint32_t>(all_layout_bindings.size());
-    layout_create_info.pBindings = all_layout_bindings.data();
+    // create descriptor layouts for all sets of binding points in the pipeline
+    std::map<uint32_t, VkDescriptorSetLayout> descriptors_set_layouts;
+    std::map<uint32_t, std::vector< VkDescriptorSet>> descriptor_sets;
+    for (auto& set : layout_bindings_by_set) {
+        VkDescriptorSetLayoutCreateInfo layout_create_info{};
+        layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layout_create_info.bindingCount = static_cast<uint32_t>(set.second.size());
+        layout_create_info.pBindings = set.second.data();
 
-    VkDescriptorSetLayout descriptor_set_layout;
-    if (vkCreateDescriptorSetLayout(device_, &layout_create_info, nullptr, &descriptor_set_layout) != VK_SUCCESS) {
-        std::cerr << "Failed to create descriptor set layout!" << std::endl;
-        return GraphicsPipeline{};
+        VkDescriptorSetLayout descriptor_set_layout;
+        if (vkCreateDescriptorSetLayout(device_, &layout_create_info, nullptr, &descriptor_set_layout) != VK_SUCCESS) {
+            std::cerr << "Failed to create descriptor set layout!" << std::endl;
+            return GraphicsPipeline{};
+        }
+
+        descriptors_set_layouts[set.first] = descriptor_set_layout;
     }
 
-    // allocate descriptor sets from the pipeline descriptor layout
-
-    std::vector<VkDescriptorSetLayout> layouts(swap_chain_images_.size(), descriptor_set_layout);
-    VkDescriptorSetAllocateInfo alloc_info{};
-    alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    alloc_info.descriptorPool = descriptor_pool_;
-    alloc_info.descriptorSetCount = static_cast<uint32_t>(swap_chain_images_.size());
-    alloc_info.pSetLayouts = layouts.data();
-
-    std::vector<VkDescriptorSet> descriptor_sets(swap_chain_images_.size());
-    if (vkAllocateDescriptorSets(device_, &alloc_info, descriptor_sets.data()) != VK_SUCCESS) {
-        std::cerr << "Failed to allocate descriptor sets!" << std::endl;
-        descriptor_sets.clear();
-        return GraphicsPipeline{};
+    // auxiliary array to make sure the layouts are ordered and contiguous in memory
+    std::vector<VkDescriptorSetLayout> descriptors_set_layouts_aux;
+    for (auto& layout : descriptors_set_layouts) {
+        descriptors_set_layouts_aux.push_back(layout.second);
     }
 
     // fixed functionality configuration
@@ -506,8 +528,8 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
 
     VkPipelineLayoutCreateInfo pipeline_layout_info{};
     pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipeline_layout_info.setLayoutCount = 1;
-    pipeline_layout_info.pSetLayouts = &descriptor_set_layout;
+    pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(descriptors_set_layouts_aux.size());
+    pipeline_layout_info.pSetLayouts = descriptors_set_layouts_aux.data();
     pipeline_layout_info.pushConstantRangeCount = 0; // Optional
     pipeline_layout_info.pPushConstantRanges = nullptr; // Optional
 
@@ -546,9 +568,9 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
         config.name, 
         key, 
         pipeline_layout, 
-        descriptor_set_layout, 
-        vk_pipeline, 
-        std::move(descriptor_sets) 
+        vk_pipeline,
+        std::move(descriptors_set_layouts),
+        std::move(pipeline_descriptor_metadata)
     };
 
     pipelines_.insert({ key, graphics_pipeline });
@@ -892,7 +914,7 @@ bool VulkanBackend::createCommandBuffers() {
 bool VulkanBackend::createDescriptorPool() {
     std::array<VkDescriptorPoolSize, 2> pool_sizes{};
     pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    pool_sizes[0].descriptorCount = static_cast<uint32_t>(swap_chain_images_.size());  // does not scale to multiple uniform buffers per shader?
+    pool_sizes[0].descriptorCount = static_cast<uint32_t>(swap_chain_images_.size() * 2);  // does not scale to multiple uniform buffers per shader?
     pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     pool_sizes[1].descriptorCount = static_cast<uint32_t>(swap_chain_images_.size());
 
@@ -958,10 +980,13 @@ void VulkanBackend::cleanupSwapChain() {
     vkFreeCommandBuffers(device_, command_pool_, static_cast<uint32_t>(command_buffers_.size()), command_buffers_.data());
 
     for (auto& pipeline : pipelines_) {
-        vkDestroyDescriptorSetLayout(device_, pipeline.second.vk_descriptor_set_layout, nullptr);
+        for (auto& descr_set_layout : pipeline.second.vk_descriptor_set_layouts) {
+            vkDestroyDescriptorSetLayout(device_, descr_set_layout.second, nullptr);
+        }
+      
         vkDestroyPipeline(device_, pipeline.second.vk_graphics_pipeline, nullptr);
         vkDestroyPipelineLayout(device_, pipeline.second.vk_pipeline_layout, nullptr);
-        pipeline.second.vk_descriptor_sets.clear();
+        pipeline.second.vk_descriptor_set_layouts.clear();
     }
 
     for (auto& render_pass : render_passes_) {
@@ -1036,8 +1061,8 @@ Buffer VulkanBackend::createIndexBuffer(const std::string& name, const std::vect
     return index_buffer;
 }
 
-void VulkanBackend::updateDescriptorSets(const UniformBuffer& buffer, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding_point) {
-    for (size_t i = 0; i < swap_chain_images_.size(); i++) {
+void VulkanBackend::updateDescriptorSets(const UniformBuffer& buffer, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding) {
+    for (size_t i = 0; i < descriptor_sets.size(); i++) {
         VkDescriptorBufferInfo buffer_info{};
         buffer_info.buffer = buffer.buffers[i].vk_buffer;
         buffer_info.offset = 0;
@@ -1046,7 +1071,7 @@ void VulkanBackend::updateDescriptorSets(const UniformBuffer& buffer, std::vecto
         VkWriteDescriptorSet descriptor_write{};
         descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptor_write.dstSet = descriptor_sets[i];
-        descriptor_write.dstBinding = binding_point;
+        descriptor_write.dstBinding = binding;
         descriptor_write.dstArrayElement = 0;
         descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         descriptor_write.descriptorCount = 1;

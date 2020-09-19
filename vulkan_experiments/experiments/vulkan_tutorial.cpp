@@ -1,5 +1,5 @@
 ﻿/*
-* vulkan_app.hpp
+* vulkna_tutorial.hpp
 *
 * Copyright (C) 2020 Riccardo Marson
 */
@@ -8,17 +8,13 @@
 #include "shader_module.hpp"
 #include "texture.hpp"
 #include "mesh.hpp"
+#include "scene_manager.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <chrono>
 
 // Declarations
-struct ModelViewProj {
-	glm::mat4 model;
-	glm::mat4 view;
-	glm::mat4 proj;
-};
 
 class VulkanTutorial : public VulkanApp {
 public:
@@ -33,11 +29,10 @@ private:
 	virtual void cleanup() final;
 
 	std::map<std::string, std::shared_ptr<ShaderModule>> shaders_;
-	std::map<std::string, UniformBuffer> uniform_buffers_;
 	std::map<std::string, std::shared_ptr<Mesh>> meshes_;
+	std::unique_ptr<SceneManager> scene_manager_;
 	RenderPass render_pass_;
 	GraphicsPipeline graphics_pipeline_;
-	ModelViewProj mvp_;
 };
 
 // Implementation
@@ -69,6 +64,12 @@ bool VulkanTutorial::loadAssets() {
 
 	meshes_[mesh->getName()] = std::move(mesh);
 
+	auto extent = vulkan_backend_.getSwapChainExtent();
+	scene_manager_ = std::make_unique<SceneManager>(&vulkan_backend_);
+	scene_manager_->setCameraProperties(45.0f, extent.width / (float)extent.height, 0.1f, 10.0f);
+	scene_manager_->setCameraPosition(glm::vec3(0.0f, 0.0f, 0.0f));
+	scene_manager_->setCameraTarget(glm::vec3(2.0f, 2.0f, 2.0f));
+
 	return true;
 }
 
@@ -93,18 +94,16 @@ void VulkanTutorial::updateScene() {
 
 	auto current_time = std::chrono::high_resolution_clock::now();
 	float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
-	
-	auto extent = vulkan_backend_.getSwapChainExtent();
-	mvp_.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-	mvp_.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-	mvp_.proj = glm::perspective(glm::radians(45.0f), extent.width / (float)extent.height, 0.1f, 10.0f);
 
-	mvp_.proj[1][1] *= -1;  // y is inverted in vulkan w.r.t. opengl
+	scene_manager_->update();
 
-	auto& command_buffers = vulkan_backend_.getCommandBuffers();
-	for (size_t i = 0; i < command_buffers.size(); i++) {
-		vulkan_backend_.updateBuffer<ModelViewProj>(uniform_buffers_["vertex_0"].buffers[i], { mvp_ });
-	}
+	auto& mesh = meshes_["viking_room"];
+
+	mesh->setTransform(
+		glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f))
+	);
+
+	mesh->update();
 }
 
 bool VulkanTutorial::createGraphicsPipeline() {
@@ -120,16 +119,15 @@ bool VulkanTutorial::createGraphicsPipeline() {
 
 	graphics_pipeline_ = vulkan_backend_.createGraphicsPipeline(config);
 
-	const auto& mvp_layout_set = shaders_["vertex"]->getDescriptorSetLayouts();
-	auto vertex_mvp_ubo = shaders_["vertex"]->getName() + "_" + std::to_string(mvp_layout_set[0].id);
-	// we still need to know the underlying C++ type to bind to the buffer(s)
-	uniform_buffers_[vertex_mvp_ubo] = vulkan_backend_.createUniformBuffer<ModelViewProj>(vertex_mvp_ubo);
+	scene_manager_->createUniformBuffer();
+	scene_manager_->createDescriptorSets(graphics_pipeline_.vk_descriptor_set_layouts);
+	scene_manager_->updateDescriptorSets(graphics_pipeline_.descriptor_metadata);
 
-	const auto& sampler_layout_set = shaders_["fragment"]->getDescriptorSetLayouts();
-	auto sampler_ubo = shaders_["fragment"]->getName() + "_" + std::to_string(sampler_layout_set[0].id);
+	auto& mesh = meshes_["viking_room"];
 
-	vulkan_backend_.updateDescriptorSets(uniform_buffers_[vertex_mvp_ubo], graphics_pipeline_.vk_descriptor_sets, mvp_layout_set[0].layout_bindings[0].binding);
-	meshes_["viking_room"]->getDiffuseTexture()->updateDescriptorSets(graphics_pipeline_.vk_descriptor_sets, sampler_layout_set[0].layout_bindings[0].binding);
+	mesh->createUniformBuffer();
+	mesh->createDescriptorSets(graphics_pipeline_.vk_descriptor_set_layouts);
+	mesh->updateDescriptorSets(graphics_pipeline_.descriptor_metadata);
 
 	return graphics_pipeline_.vk_graphics_pipeline != VK_NULL_HANDLE;
 }
@@ -163,12 +161,17 @@ bool VulkanTutorial::recordCommands() {
 		vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_graphics_pipeline);
 
 		VkDeviceSize offsets[] = { 0 };
+		auto& scene_descriptors = scene_manager_->getDescriptorSets();
+
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &scene_descriptors[i], 0, nullptr);
+
 		auto& mesh = meshes_["viking_room"];
+		auto& mesh_descriptors = mesh->getDescriptorSets();
 
 		vkCmdBindVertexBuffers(command_buffers[i], 0, 1, &mesh->getVertexBuffer().vk_buffer, offsets);
 		vkCmdBindIndexBuffer(command_buffers[i], mesh->getIndexBuffer().vk_buffer, 0, VK_INDEX_TYPE_UINT32);
-		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, 0, 1, &graphics_pipeline_.vk_descriptor_sets[i], 0, nullptr);
-		
+		vkCmdBindDescriptorSets(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, MODEL_UNIFORM_SET_ID, 1, &mesh_descriptors[i], 0, nullptr);
+
 		vkCmdDrawIndexed(command_buffers[i], mesh->getIndexCount(), 1, 0, 0, 0);
 
 		vkCmdEndRenderPass(command_buffers[i]);

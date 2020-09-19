@@ -1,5 +1,5 @@
 /*
-* vulkan_app.hpp
+* mesh.hpp
 *
 * Copyright (C) 2020 Riccardo Marson
 */
@@ -34,11 +34,12 @@ std::shared_ptr<Mesh> Mesh::createMesh(const std::string& name, VulkanBackend* b
 Mesh::Mesh(const std::string& name, VulkanBackend* backend) :
     name_(name),
     backend_(backend) {
-
+    model_data_.transform_matrix = glm::identity<glm::mat4>();
 }
 
 Mesh::~Mesh() {
     textures_.clear();
+    vk_descriptor_sets_.clear();
 }
 
 bool Mesh::loadObjModel(const std::string& obj_file_path) {
@@ -111,4 +112,42 @@ bool Mesh::loadObjModel(const std::string& obj_file_path) {
     vertex_buffer_ = backend_->createVertexBuffer<Vertex>(name_ + "_vertices", vertices);
     index_buffer_ = backend_->createIndexBuffer(name_ + "_indices", indices);
     return vertex_buffer_.vk_buffer != VK_NULL_HANDLE && index_buffer_.vk_buffer != VK_NULL_HANDLE;
+}
+
+void Mesh::setTransform(const glm::mat4& transform) {
+    model_data_.transform_matrix = transform;
+}
+
+void Mesh::update() {
+    for (size_t i = 0; i < backend_->getSwapChainSize(); i++) {
+        backend_->updateBuffer<ModelData>(uniform_buffer_.buffers[i], { model_data_ });
+    }
+}
+
+void Mesh::createUniformBuffer() {
+    uniform_buffer_ = backend_->createUniformBuffer<ModelData>(name_ + "_model_data"); // the buffer lifecycle is managed by the backend
+}
+
+void Mesh::createDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {
+    const auto& layout = descriptor_set_layouts.find(MODEL_UNIFORM_SET_ID)->second;
+    std::vector<VkDescriptorSetLayout> layouts(backend_->getSwapChainSize(), layout);
+    VkDescriptorSetAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    alloc_info.descriptorPool = backend_->getDescriptorPool();
+    alloc_info.descriptorSetCount = backend_->getSwapChainSize();
+    alloc_info.pSetLayouts = layouts.data();
+
+    std::vector<VkDescriptorSet> layout_descriptor_sets(backend_->getSwapChainSize());
+    if (vkAllocateDescriptorSets(backend_->getDevice(), &alloc_info, layout_descriptor_sets.data()) != VK_SUCCESS) {
+        std::cerr << "Failed to allocate Mesh descriptor sets!" << std::endl;
+        return;
+    }
+
+    vk_descriptor_sets_ = std::move(layout_descriptor_sets);
+}
+
+void Mesh::updateDescriptorSets(const DescriptorSetMetadata& metadata) {
+    const auto& bindings = metadata.set_bindings.find(MODEL_UNIFORM_SET_ID)->second;
+    backend_->updateDescriptorSets(uniform_buffer_, vk_descriptor_sets_, bindings.find(MODEL_DATA_BINDING_NAME)->second);
+    getDiffuseTexture()->updateDescriptorSets(vk_descriptor_sets_, bindings.find(DIFFUSE_SAMPLER_BINDING_NAME)->second);
 }

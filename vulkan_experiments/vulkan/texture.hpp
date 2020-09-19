@@ -1,5 +1,5 @@
 /*
-* vulkan_app.hpp
+* texture.hpp
 *
 * Copyright (C) 2020 Riccardo Marson
 */
