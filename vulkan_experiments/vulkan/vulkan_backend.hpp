@@ -64,9 +64,10 @@ public:
     std::shared_ptr<Texture> createTexture(const std::string& name);
     std::shared_ptr<Mesh> createMesh(const std::string& name);
 
-    RenderPass createRenderPass(const std::string& name);
+    RenderPass createRenderPass(const std::string& name, bool store_depth = false);
     GraphicsPipeline createGraphicsPipeline(const GraphicsPipelineConfig& config);
-    
+    bool createDescriptorPool(uint32_t buffer_count, uint32_t sampler_count, uint32_t max_sets = 0);
+
     template<typename DataType>
     Buffer createVertexBuffer(const std::string& name, const std::vector<DataType>& src_buffer);
 
@@ -99,7 +100,6 @@ private:
     bool createImageViews();
     bool createCommandPool();
     bool createCommandBuffers();
-    bool createDescriptorPool();
     bool createSyncObjects();
 
     void cleanupSwapChain();
@@ -114,10 +114,11 @@ private:
 
     VkDeviceMemory allocateDeviceMemory(VkMemoryRequirements mem_reqs, VkMemoryPropertyFlags properties);
     void copyBufferToGpuLocalMemory(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
-    VkImageView createImageView(VkImage image, VkFormat format);
+    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags);
+
+    VkPhysicalDevice getPhysicalDevice() const { return physical_device_; }
 
     const uint32_t max_frames_in_flight_ = 2;
-    const uint32_t max_descriptor_sets_ = 5; 
     size_t current_frame_ = 0;
     VkExtent2D window_swap_extent_ = { 0, 0 };
     SwapChainSupportDetails swap_chain_support_;

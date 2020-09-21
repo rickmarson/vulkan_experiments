@@ -10,6 +10,24 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+
+namespace {
+    bool isFormatSupported(VkPhysicalDevice physical_device, VkFormat format, VkImageTiling tiling, VkFormatFeatureFlags features) {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties(physical_device, format, &props);
+
+        if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) {
+            return true;
+        }
+        else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features) {
+            return true;
+        }
+
+        return false;
+    }
+}
+
+
 std::shared_ptr<Texture> Texture::createTexture(const std::string& name, VkDevice device, VulkanBackend* backend) {
 	return std::make_shared<Texture>(name, device, backend);
 }
@@ -25,7 +43,9 @@ Texture::~Texture() {
 
 void Texture::cleanup() {
     if (isValid()) {
-        vkDestroySampler(device_, vk_sampler_, nullptr);
+        if (vk_sampler_ != VK_NULL_HANDLE) {
+            vkDestroySampler(device_, vk_sampler_, nullptr);
+        }
         vkDestroyImageView(device_, vk_image_view_, nullptr);
         vkDestroyImage(device_, vk_image_, nullptr);
         vkFreeMemory(device_, vk_memory_, nullptr);
@@ -33,6 +53,15 @@ void Texture::cleanup() {
 }
 
 void Texture::loadImageRGBA(const std::string& src_image_path) {
+    if (!isFormatSupported(backend_->getPhysicalDevice(), 
+                           VK_FORMAT_R8G8B8A8_SRGB, 
+                           VK_IMAGE_TILING_OPTIMAL, 
+                           VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)) {
+        std::cerr << "Error loading texture " << src_image_path << std::endl;
+        std::cerr << "VK_FORMAT_R8G8B8A8_SRGB texture format is not supported on the selected device!" << std::endl;
+        return;
+    }
+
     int width, height, channels;
     stbi_uc* stb_pixels = stbi_load(src_image_path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
 
@@ -60,7 +89,6 @@ void Texture::loadImageRGBA(const std::string& src_image_path) {
     width_ = static_cast<uint32_t>(width);
     height_ = static_cast<uint32_t>(height);
     channels_ = static_cast<uint32_t>(channels);
-    VkDeviceSize image_size = static_cast<uint64_t>(width)* height* channels;
     vk_format_ = VK_FORMAT_R8G8B8A8_SRGB;
     vk_usage_flags_ = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     vk_tiling_ = VK_IMAGE_TILING_OPTIMAL;
@@ -81,11 +109,11 @@ void Texture::loadImageRGBA(const std::string& src_image_path) {
         return;
     }
 
-    transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     copyBufferToImage(staging_buffer.vk_buffer, vk_image_, width_, height_);
-    transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-    vk_image_view_ = backend_->createImageView(vk_image_, vk_format_);
+    vk_image_view_ = backend_->createImageView(vk_image_, vk_format_, VK_IMAGE_ASPECT_COLOR_BIT);
 
     if (vk_image_view_ == VK_NULL_HANDLE) {
         vkDestroyImage(device_, vk_image_, nullptr);
@@ -95,6 +123,43 @@ void Texture::loadImageRGBA(const std::string& src_image_path) {
     vkDestroyBuffer(device_, staging_buffer.vk_buffer, nullptr);
     vkFreeMemory(device_, staging_buffer.vk_buffer_memory, nullptr);
     stbi_image_free(stb_pixels);
+}
+
+void Texture::createDepthTexture() {
+    if (!isFormatSupported(backend_->getPhysicalDevice(),
+        VK_FORMAT_D24_UNORM_S8_UINT,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+        std::cerr << "Error creating depth attachment image" << std::endl;
+        std::cerr << "VK_FORMAT_D24_UNORM_S8_UINT texture format is not supported on the selected device!" << std::endl;
+        return;
+    }
+
+    auto extent = backend_->getSwapChainExtent();
+    width_ = extent.width;
+    height_ = extent.height;
+    channels_ = 1;
+    vk_format_ = VK_FORMAT_D24_UNORM_S8_UINT;
+    vk_usage_flags_ = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    vk_tiling_ = VK_IMAGE_TILING_OPTIMAL;
+    vk_mem_props_ = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+    if (!createImage()) {
+        if (vk_image_ != VK_NULL_HANDLE) {
+            vkDestroyImage(device_, vk_image_, nullptr);
+        }
+        return;
+    }
+
+    vk_image_view_ = backend_->createImageView(vk_image_, vk_format_, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+
+    if (vk_image_view_ == VK_NULL_HANDLE) {
+        vkDestroyImage(device_, vk_image_, nullptr);
+        vkFreeMemory(device_, vk_memory_, nullptr);
+    }
+
+    transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
 }
 
 bool Texture::createImage() {
@@ -137,7 +202,7 @@ bool Texture::createImage() {
     return true;
 }
 
-void Texture::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout) {
+void Texture::transitionImageLayout(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageLayout old_layout, VkImageLayout new_layout) {
     VkCommandBuffer command_buffer = backend_->beginSingleTimeCommands();
 
     VkImageMemoryBarrier barrier{};
@@ -147,7 +212,7 @@ void Texture::transitionImageLayout(VkImage image, VkFormat format, VkImageLayou
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = image;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.aspectMask = aspect_flags;
     barrier.subresourceRange.baseMipLevel = 0;
     barrier.subresourceRange.levelCount = 1;
     barrier.subresourceRange.baseArrayLayer = 0;
@@ -169,6 +234,13 @@ void Texture::transitionImageLayout(VkImage image, VkFormat format, VkImageLayou
 
         src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
         dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    }
+    else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+        src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     }
     else {
         std::cerr << "Unsupported layout transition!" << std::endl;

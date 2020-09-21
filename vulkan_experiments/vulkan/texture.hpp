@@ -20,17 +20,21 @@ public:
 
     const std::string& getName() const { return name_; }
     void loadImageRGBA(const std::string& src_image_path);
+    void createDepthTexture();
     bool isValid() const { return vk_image_ != VK_NULL_HANDLE && vk_memory_ != VK_NULL_HANDLE && vk_image_view_ != VK_NULL_HANDLE; }
 
     void createSampler();
     bool hasValidSampler() const { return vk_sampler_ != VK_NULL_HANDLE; }
     void updateDescriptorSets(std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding_point);
 
+    VkFormat getFormat() const { return vk_format_; }
+    VkImageView getImageView() const { return vk_image_view_; }
+
 private:
     bool createImage();
     void cleanup();
 
-    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout);
+    void transitionImageLayout(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageLayout old_layout, VkImageLayout new_layout);
     void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 
     std::string name_;

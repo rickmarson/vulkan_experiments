@@ -10,8 +10,6 @@
 #include "mesh.hpp"
 #include "scene_manager.hpp"
 
-#include <glm/gtc/matrix_transform.hpp>
-
 #include <chrono>
 
 // Declarations
@@ -87,6 +85,7 @@ bool VulkanTutorial::setupScene() {
 void VulkanTutorial::cleanup() {
 	meshes_.clear();
 	shaders_.clear();
+	render_pass_.depth_texture.reset();
 }
 
 void VulkanTutorial::updateScene() {
@@ -118,6 +117,8 @@ bool VulkanTutorial::createGraphicsPipeline() {
 	config.render_pass = render_pass_;
 
 	graphics_pipeline_ = vulkan_backend_.createGraphicsPipeline(config);
+
+	vulkan_backend_.createDescriptorPool(2, 1);
 
 	scene_manager_->createUniformBuffer();
 	scene_manager_->createDescriptorSets(graphics_pipeline_.vk_descriptor_set_layouts);
@@ -153,9 +154,12 @@ bool VulkanTutorial::recordCommands() {
 		render_pass_info.renderArea.offset = { 0, 0 };
 		render_pass_info.renderArea.extent = vulkan_backend_.getSwapChainExtent();
 
-		VkClearValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
-		render_pass_info.clearValueCount = 1;
-		render_pass_info.pClearValues = &clearColor;
+		std::array<VkClearValue, 2> clear_values{};
+		clear_values[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+		clear_values[1].depthStencil = { 1.0f, 0 };
+
+		render_pass_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
+		render_pass_info.pClearValues = clear_values.data();
 
 		vkCmdBeginRenderPass(command_buffers[i], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 		vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_graphics_pipeline);

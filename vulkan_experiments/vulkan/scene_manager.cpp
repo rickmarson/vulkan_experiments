@@ -7,8 +7,6 @@
 #include "scene_manager.hpp"
 #include "vulkan_backend.hpp"
 
-#include <glm/gtc/matrix_transform.hpp>
-
 
 SceneManager::SceneManager(VulkanBackend* backend) :
 	backend_(backend) {

@@ -295,7 +295,11 @@ std::shared_ptr<Mesh> VulkanBackend::createMesh(const std::string& name) {
     return Mesh::createMesh(name, this);
 }
 
-RenderPass VulkanBackend::createRenderPass(const std::string& name) {
+RenderPass VulkanBackend::createRenderPass(const std::string& name, bool store_depth) {
+    // create depth attachment
+    auto depth_texture = Texture::createTexture(name + "_depth_attachment", device_, this);
+    depth_texture->createDepthTexture();
+
     VkAttachmentDescription color_attachment{};
     color_attachment.format = swap_chain_image_format_;
     color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -310,15 +314,32 @@ RenderPass VulkanBackend::createRenderPass(const std::string& name) {
     color_attachment_ref.attachment = 0;
     color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentDescription depth_attachment{};
+    depth_attachment.format = depth_texture->getFormat();
+    depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depth_attachment.storeOp = store_depth ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depth_attachment_ref{};
+    depth_attachment_ref.attachment = 1;
+    depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &color_attachment_ref;
+    subpass.pDepthStencilAttachment = &depth_attachment_ref;
+
+    std::array<VkAttachmentDescription, 2> attachments = { color_attachment, depth_attachment };
 
     VkRenderPassCreateInfo render_pass_info{};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    render_pass_info.attachmentCount = 1;
-    render_pass_info.pAttachments = &color_attachment;
+    render_pass_info.attachmentCount = static_cast<uint32_t>(attachments.size());;
+    render_pass_info.pAttachments = attachments.data();
     render_pass_info.subpassCount = 1;
     render_pass_info.pSubpasses = &subpass;
 
@@ -344,20 +365,22 @@ RenderPass VulkanBackend::createRenderPass(const std::string& name) {
     render_pass.name = name;
     render_pass.key = key;
     render_pass.vk_render_pass = vk_render_pass;
+    render_pass.depth_texture = std::move(depth_texture);
 
     // create the swapchain framebuffers for this render pass
     render_pass.swap_chain_framebuffers.resize(swap_chain_image_views_.size());
 
     for (size_t i = 0; i < swap_chain_image_views_.size(); i++) {
-        VkImageView attachments[] = {
-            swap_chain_image_views_[i]
+        std::array<VkImageView, 2> framebuffer_attachments = {
+            swap_chain_image_views_[i],
+            render_pass.depth_texture->getImageView()
         };
 
         VkFramebufferCreateInfo framebuffer_info{};
         framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebuffer_info.renderPass = vk_render_pass;
-        framebuffer_info.attachmentCount = 1;
-        framebuffer_info.pAttachments = attachments;
+        framebuffer_info.attachmentCount = static_cast<uint32_t>(framebuffer_attachments.size());
+        framebuffer_info.pAttachments = framebuffer_attachments.data();
         framebuffer_info.width = swap_chain_extent_.width;
         framebuffer_info.height = swap_chain_extent_.height;
         framebuffer_info.layers = 1;
@@ -526,6 +549,18 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
     color_blending.blendConstants[2] = 0.0f; // Optional
     color_blending.blendConstants[3] = 0.0f; // Optional
 
+    VkPipelineDepthStencilStateCreateInfo depth_stencil{};
+    depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depth_stencil.depthTestEnable = VK_TRUE;
+    depth_stencil.depthWriteEnable = VK_TRUE;
+    depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depth_stencil.depthBoundsTestEnable = VK_FALSE;
+    depth_stencil.minDepthBounds = 0.0f; // Optional
+    depth_stencil.maxDepthBounds = 1.0f; // Optional
+    depth_stencil.stencilTestEnable = VK_FALSE;
+    // depth_stencil.front{}; // Optional
+    // depth_stencil.back{}; // Optional
+
     VkPipelineLayoutCreateInfo pipeline_layout_info{};
     pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(descriptors_set_layouts_aux.size());
@@ -548,7 +583,7 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
     pipeline_info.pViewportState = &viewport_state;
     pipeline_info.pRasterizationState = &rasterizer;
     pipeline_info.pMultisampleState = &multisampling;
-    pipeline_info.pDepthStencilState = nullptr; // Optional
+    pipeline_info.pDepthStencilState = &depth_stencil;
     pipeline_info.pColorBlendState = &color_blending;
     pipeline_info.pDynamicState = nullptr; // Optional
     pipeline_info.layout = pipeline_layout;
@@ -699,9 +734,6 @@ bool VulkanBackend::initVulkan() {
         return false;
     }
     if (!createCommandBuffers()) {
-        return false;
-    }
-    if (!createDescriptorPool()) {
         return false;
     }
     if (!createSyncObjects()) {
@@ -869,7 +901,7 @@ bool VulkanBackend::createImageViews() {
     swap_chain_image_views_.resize(swap_chain_images_.size());
 
     for (size_t i = 0; i < swap_chain_images_.size(); i++) {
-        swap_chain_image_views_[i] = createImageView(swap_chain_images_[i], swap_chain_image_format_);
+        swap_chain_image_views_[i] = createImageView(swap_chain_images_[i], swap_chain_image_format_, VK_IMAGE_ASPECT_COLOR_BIT);
         if (swap_chain_image_views_[i] == VK_NULL_HANDLE) {
             return false;
         }
@@ -911,18 +943,22 @@ bool VulkanBackend::createCommandBuffers() {
     return true;
 }
 
-bool VulkanBackend::createDescriptorPool() {
+bool VulkanBackend::createDescriptorPool(uint32_t buffer_count, uint32_t sampler_count, uint32_t max_sets) {
+    if (max_sets == 0) {
+        max_sets = buffer_count * sampler_count * 2;
+    }
+
     std::array<VkDescriptorPoolSize, 2> pool_sizes{};
     pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    pool_sizes[0].descriptorCount = static_cast<uint32_t>(swap_chain_images_.size() * 2);  // does not scale to multiple uniform buffers per shader?
+    pool_sizes[0].descriptorCount = static_cast<uint32_t>(swap_chain_images_.size()) * buffer_count;
     pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    pool_sizes[1].descriptorCount = static_cast<uint32_t>(swap_chain_images_.size());
+    pool_sizes[1].descriptorCount = static_cast<uint32_t>(swap_chain_images_.size()) * sampler_count;
 
     VkDescriptorPoolCreateInfo pool_info{};
     pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     pool_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
     pool_info.pPoolSizes = pool_sizes.data();
-    pool_info.maxSets = static_cast<uint32_t>(swap_chain_images_.size())* max_descriptor_sets_;
+    pool_info.maxSets = static_cast<uint32_t>(swap_chain_images_.size())* max_sets;
 
     if (vkCreateDescriptorPool(device_, &pool_info, nullptr, &descriptor_pool_) != VK_SUCCESS) {
         std::cerr << "Failed to create descriptor pool!" << std::endl;
@@ -975,6 +1011,8 @@ void VulkanBackend::cleanupSwapChain() {
         for (auto& framebuffer : render_pass.second.swap_chain_framebuffers) {
             vkDestroyFramebuffer(device_, framebuffer, nullptr);
         }
+        render_pass.second.swap_chain_framebuffers.clear();
+        render_pass.second.depth_texture.reset();
     }
 
     vkFreeCommandBuffers(device_, command_pool_, static_cast<uint32_t>(command_buffers_.size()), command_buffers_.data());
@@ -1015,9 +1053,6 @@ bool VulkanBackend::recreateSwapChain() {
         return false;
     }
     if (!createCommandBuffers()) {
-        return false;
-    }
-    if (!createDescriptorPool()) {
         return false;
     }
     
@@ -1083,7 +1118,7 @@ void VulkanBackend::updateDescriptorSets(const UniformBuffer& buffer, std::vecto
     }
 }
 
-VkImageView VulkanBackend::createImageView(VkImage image, VkFormat format) {
+VkImageView VulkanBackend::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags) {
     VkImageViewCreateInfo view_info{};
     view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     view_info.image = image;
@@ -1093,7 +1128,7 @@ VkImageView VulkanBackend::createImageView(VkImage image, VkFormat format) {
     view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
     view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
     view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    view_info.subresourceRange.aspectMask = aspect_flags;
     view_info.subresourceRange.baseMipLevel = 0;
     view_info.subresourceRange.levelCount = 1;
     view_info.subresourceRange.baseArrayLayer = 0;
