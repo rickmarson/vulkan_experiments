@@ -62,29 +62,19 @@ void Texture::loadImageRGBA(const std::string& src_image_path) {
         return;
     }
 
-    int width, height, channels;
-    stbi_uc* stb_pixels = stbi_load(src_image_path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+    int width, height, original_channels;
+    stbi_uc* stb_pixels = stbi_load(src_image_path.c_str(), &width, &height, &original_channels, STBI_rgb_alpha);
 
     if (!stb_pixels) {
         std::cerr << "Failed to load texture image!" << std::endl;
         return;
     }
 
-    std::vector<stbi_uc> pixels;
+    uint32_t channels = STBI_rgb_alpha;
+    size_t bytes = static_cast<size_t>(width)* height * channels;
 
-    if (channels == 3) {
-        pixels.resize(width * height * 4, 0);
-        for (size_t px = 0; px < width * height * 3; ++px) {
-            pixels[px] = stb_pixels[px];
-            pixels[px+1] = stb_pixels[px+1];
-            pixels[px+2] = stb_pixels[px+2];
-            pixels[px+3] = 255;
-        }
-        channels = 4;
-    }
-    else {
-        pixels = std::vector<stbi_uc>(stb_pixels, stb_pixels + width * height * channels);
-    }
+    auto pixels = std::vector<stbi_uc>(stb_pixels, stb_pixels + bytes);
+    stbi_image_free(stb_pixels);
 
     width_ = static_cast<uint32_t>(width);
     height_ = static_cast<uint32_t>(height);
@@ -122,7 +112,6 @@ void Texture::loadImageRGBA(const std::string& src_image_path) {
 
     vkDestroyBuffer(device_, staging_buffer.vk_buffer, nullptr);
     vkFreeMemory(device_, staging_buffer.vk_buffer_memory, nullptr);
-    stbi_image_free(stb_pixels);
 }
 
 void Texture::createDepthTexture() {

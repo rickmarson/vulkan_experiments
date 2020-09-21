@@ -1,5 +1,6 @@
 .vs/*.sqlite
 .vs/vulkan
+build/
 vulkan_experiments/out
 vulkan_experiments/.vs/vulkan_experiments
 vulkan_experiments/shaders/*.spv

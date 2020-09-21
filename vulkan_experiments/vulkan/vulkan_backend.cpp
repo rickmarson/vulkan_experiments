@@ -558,8 +558,8 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
     depth_stencil.minDepthBounds = 0.0f; // Optional
     depth_stencil.maxDepthBounds = 1.0f; // Optional
     depth_stencil.stencilTestEnable = VK_FALSE;
-    // depth_stencil.front{}; // Optional
-    // depth_stencil.back{}; // Optional
+    // depth_stencil.front = {}; // Optional
+    // depth_stencil.back = {}; // Optional
 
     VkPipelineLayoutCreateInfo pipeline_layout_info{};
     pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;

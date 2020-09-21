@@ -12,6 +12,9 @@
 #include <glm/gtx/hash.hpp>
 
 #define TINYOBJLOADER_IMPLEMENTATION
+#ifdef TINYOBJLOADER_USE_DOUBLE
+#undef TINYOBJLOADER_USE_DOUBLE
+#endif
 #include <tiny_obj_loader.h>
 
 
@@ -83,14 +86,14 @@ bool Mesh::loadObjModel(const std::string& obj_file_path) {
             Vertex vertex{};
 
             vertex.pos = {
-                attrib.vertices[3 * index.vertex_index + 0],
-                attrib.vertices[3 * index.vertex_index + 1],
-                attrib.vertices[3 * index.vertex_index + 2]
+                attrib.vertices[3.0f * index.vertex_index + 0.0f],
+                attrib.vertices[3.0f * index.vertex_index + 1.0f],
+                attrib.vertices[3.0f * index.vertex_index + 2.0f]
             };
 
             vertex.tex_coord = {
-                attrib.texcoords[2 * index.texcoord_index + 0],
-                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+                attrib.texcoords[2.0f * index.texcoord_index + 0.0f],
+                1.0f - attrib.texcoords[2.0f * index.texcoord_index + 1.0f]
             };
 
             vertex.color = diffuse_colour;

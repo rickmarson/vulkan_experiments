@@ -30,7 +30,8 @@ add_custom_target(shaders ALL ${COMPILE_SHADERS_CMD} ${CMAKE_SOURCE_DIR})
 set(SPIRV_REFLECT_FOLDER ${CMAKE_CURRENT_SOURCE_DIR}/utilities/SPIRV-Reflect)
 
 # Include sub-projects.
-add_subdirectory("utilities/glfw")
+set(TINYOBJLOADER_USE_DOUBLE OFF CACHE BOOL "disable TINYOBJLOADER_USE_DOUBLE")
 add_subdirectory("utilities/tinyobjloader")
+add_subdirectory("utilities/glfw")
 add_subdirectory("vulkan")
 add_subdirectory("experiments")
