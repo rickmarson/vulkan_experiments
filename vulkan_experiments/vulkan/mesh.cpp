@@ -41,6 +41,8 @@ Mesh::Mesh(const std::string& name, VulkanBackend* backend) :
 Mesh::~Mesh() {
     textures_.clear();
     vk_descriptor_sets_.clear();
+    backend_->destroyBuffer(index_buffer_);
+    backend_->destroyBuffer(vertex_buffer_);
 }
 
 bool Mesh::loadObjModel(const std::string& obj_file_path) {
@@ -127,6 +129,10 @@ void Mesh::update() {
 
 void Mesh::createUniformBuffer() {
     uniform_buffer_ = backend_->createUniformBuffer<ModelData>(name_ + "_model_data"); // the buffer lifecycle is managed by the backend
+}
+
+void Mesh::deleteUniformBuffer() {
+    backend_->destroyUniformBuffer(uniform_buffer_);
 }
 
 void Mesh::createDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {

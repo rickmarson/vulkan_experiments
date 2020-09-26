@@ -31,6 +31,7 @@ public:
 	uint32_t getIndexCount() const { return index_count_; }
 
 	void createUniformBuffer();
+	void deleteUniformBuffer();
 	void createDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
 	void updateDescriptorSets(const DescriptorSetMetadata& metadata);
 	std::vector<VkDescriptorSet>& getDescriptorSets() { return vk_descriptor_sets_; }

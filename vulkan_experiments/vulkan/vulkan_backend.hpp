@@ -28,7 +28,6 @@ struct GraphicsPipelineConfig {
 
 struct GraphicsPipeline {
     std::string name;
-    size_t key = 0;
 
     VkPipelineLayout vk_pipeline_layout = VK_NULL_HANDLE;
     VkPipeline vk_graphics_pipeline = VK_NULL_HANDLE;
@@ -53,6 +52,7 @@ public:
     uint32_t getSwapChainSize() const { return swap_chain_images_.size(); }
     VkDescriptorPool getDescriptorPool() { return descriptor_pool_; }
     VkDevice getDevice() { return device_; }
+    VkSampleCountFlagBits getMaxMSAASamples() const { return max_msaa_samples_; }
 
     bool startUp();
     void shutDown();
@@ -64,7 +64,7 @@ public:
     std::shared_ptr<Texture> createTexture(const std::string& name);
     std::shared_ptr<Mesh> createMesh(const std::string& name);
 
-    RenderPass createRenderPass(const std::string& name, bool store_depth = false);
+    RenderPass createRenderPass(const std::string& name, VkSampleCountFlagBits msaa_samples = VK_SAMPLE_COUNT_1_BIT, bool store_depth = false);
     GraphicsPipeline createGraphicsPipeline(const GraphicsPipelineConfig& config);
     bool createDescriptorPool(uint32_t buffer_count, uint32_t sampler_count, uint32_t max_sets = 0);
 
@@ -74,13 +74,18 @@ public:
     Buffer createIndexBuffer(const std::string& name, const std::vector<uint32_t>& src_buffer);
 
     template<typename DataType>
-    void updateBuffer(Buffer dst_buffer, const std::vector<DataType>& src_buffer);
+    void updateBuffer(Buffer& dst_buffer, const std::vector<DataType>& src_buffer);
 
     template<typename DataType>
     UniformBuffer createUniformBuffer(const std::string base_name);
     
     void updateDescriptorSets(const UniformBuffer& buffer, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding);
 
+    void destroyBuffer(Buffer& buffer);
+    void destroyRenderPass(RenderPass& render_pass);
+    void destroyGraphicsPipeline(GraphicsPipeline& graphics_pipeline);
+    void destroyUniformBuffer(UniformBuffer& uniform_buffer);
+    
     std::vector<VkCommandBuffer>& getCommandBuffers() { return command_buffers_; }
 
     VkResult submitCommands();
@@ -134,6 +139,7 @@ private:
     VkFormat swap_chain_image_format_ = VK_FORMAT_UNDEFINED;
     VkExtent2D swap_chain_extent_ = { 0,0 };
     std::vector<VkImageView> swap_chain_image_views_;
+    VkSampleCountFlagBits max_msaa_samples_ = VK_SAMPLE_COUNT_1_BIT;
     VkCommandPool command_pool_ = VK_NULL_HANDLE;  // one for every queue
     VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> command_buffers_;  // one for every image in the swap chain
@@ -141,12 +147,6 @@ private:
     std::vector<VkSemaphore> render_finished_semaphores_;
     std::vector<VkFence> in_flight_fences_;
     std::vector<VkFence> images_in_flight_;
-
-    std::unordered_map<size_t, RenderPass> render_passes_;
-    std::unordered_map<size_t, GraphicsPipeline> pipelines_;
-    std::unordered_map<size_t, Buffer> gpu_local_buffers_;
-    std::unordered_map<size_t, Buffer> host_visible_buffers_;
-    std::unordered_map<size_t, UniformBuffer> uniform_buffers_;
 };
 
 // inlines
@@ -157,8 +157,7 @@ Buffer VulkanBackend::createVertexBuffer(const std::string& name, const std::vec
     updateBuffer<DataType>(staging_buffer, src_buffer);
     Buffer vertex_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_SHARING_MODE_EXCLUSIVE, false, true);
     copyBufferToGpuLocalMemory(staging_buffer.vk_buffer, vertex_buffer.vk_buffer, sizeof(DataType) * src_buffer.size());
-    vkDestroyBuffer(device_, staging_buffer.vk_buffer, nullptr);
-    vkFreeMemory(device_, staging_buffer.vk_buffer_memory, nullptr);
+    destroyBuffer(staging_buffer);
     return vertex_buffer;
 }
 
@@ -203,20 +202,16 @@ Buffer VulkanBackend::createBuffer(const std::string& name,
 
     Buffer buffer;
     buffer.name = name;
-    buffer.key = std::hash<std::string>{}(name);
+    buffer.host_visible = host_visible;
     buffer.type = buffer_usage;
     buffer.vk_buffer = vk_buffer;
     buffer.vk_buffer_memory = memory;
-
-    if (persist) {
-        host_visible ? host_visible_buffers_.insert({ buffer.key, buffer }) : gpu_local_buffers_.insert({ buffer.key, buffer });
-    }
 
     return buffer;
 }
 
 template<typename DataType>
-void VulkanBackend::updateBuffer(Buffer dst_buffer, const std::vector<DataType>& src_buffer) {
+void VulkanBackend::updateBuffer(Buffer& dst_buffer, const std::vector<DataType>& src_buffer) {
     // Note: Buffer must be host visible
     void* data;
     size_t bytes = sizeof(DataType) * src_buffer.size();
@@ -260,7 +255,6 @@ UniformBuffer VulkanBackend::createUniformBuffer(const std::string base_name) {
 
         Buffer buffer;
         buffer.name = name;
-        buffer.key = std::hash<std::string>{}(name);
         buffer.type = buffer_info.usage;
         buffer.vk_buffer = vk_buffer;
         buffer.vk_buffer_memory = memory;
@@ -269,11 +263,9 @@ UniformBuffer VulkanBackend::createUniformBuffer(const std::string base_name) {
     }
 
     UniformBuffer uniform_buffer;
-    uniform_buffer.name = base_name; 
-    uniform_buffer.key = std::hash<std::string>{}(base_name);
+    uniform_buffer.name = base_name;
     uniform_buffer.buffer_size = sizeof(DataType);
     uniform_buffer.buffers = std::move(buffers);
 
-    uniform_buffers_.insert({ uniform_buffer.key, uniform_buffer });
     return uniform_buffer;
 }

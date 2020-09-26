@@ -52,7 +52,7 @@ void Texture::cleanup() {
     }
 }
 
-void Texture::loadImageRGBA(const std::string& src_image_path) {
+void Texture::loadImageRGBA(const std::string& src_image_path, uint32_t mip_levels) {
     if (!isFormatSupported(backend_->getPhysicalDevice(), 
                            VK_FORMAT_R8G8B8A8_SRGB, 
                            VK_IMAGE_TILING_OPTIMAL, 
@@ -79,10 +79,12 @@ void Texture::loadImageRGBA(const std::string& src_image_path) {
     width_ = static_cast<uint32_t>(width);
     height_ = static_cast<uint32_t>(height);
     channels_ = static_cast<uint32_t>(channels);
+    mip_levels_ = mip_levels;
     vk_format_ = VK_FORMAT_R8G8B8A8_SRGB;
     vk_usage_flags_ = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     vk_tiling_ = VK_IMAGE_TILING_OPTIMAL;
     vk_mem_props_ = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    vk_num_samples_ = VK_SAMPLE_COUNT_1_BIT;
 
     Buffer staging_buffer = backend_->createBuffer<stbi_uc>("image_staging_buffer", pixels, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, true, false);
     backend_->updateBuffer<stbi_uc>(staging_buffer, pixels);
@@ -114,7 +116,43 @@ void Texture::loadImageRGBA(const std::string& src_image_path) {
     vkFreeMemory(device_, staging_buffer.vk_buffer_memory, nullptr);
 }
 
-void Texture::createDepthTexture() {
+void Texture::createColourAttachment(uint32_t width, uint32_t height, VkFormat format, uint32_t mip_levels, VkSampleCountFlagBits num_samples) {
+    if (!isFormatSupported(backend_->getPhysicalDevice(),
+        format,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) {
+        std::cerr << "Error loading texture " << name_ << std::endl;
+        std::cerr << "VK_FORMAT_R8G8B8A8_SRGB texture format is not supported on the selected device!" << std::endl;
+        return;
+    }
+
+    width_ = width;
+    height_ = height;
+    channels_ = 4;
+    mip_levels_ = mip_levels;
+    vk_format_ = format;
+    vk_usage_flags_ = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    vk_tiling_ = VK_IMAGE_TILING_OPTIMAL;
+    vk_mem_props_ = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    vk_num_samples_ = num_samples;
+
+    if (!createImage()) {
+        if (vk_image_ != VK_NULL_HANDLE) {
+            vkDestroyImage(device_, vk_image_, nullptr);
+        }
+        return;
+    }
+
+    vk_image_view_ = backend_->createImageView(vk_image_, vk_format_, VK_IMAGE_ASPECT_COLOR_BIT);
+
+    if (vk_image_view_ == VK_NULL_HANDLE) {
+        vkDestroyImage(device_, vk_image_, nullptr);
+        vkFreeMemory(device_, vk_memory_, nullptr);
+    }
+
+}
+
+void Texture::createDepthStencilAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits num_samples) {
     if (!isFormatSupported(backend_->getPhysicalDevice(),
         VK_FORMAT_D24_UNORM_S8_UINT,
         VK_IMAGE_TILING_OPTIMAL,
@@ -124,14 +162,15 @@ void Texture::createDepthTexture() {
         return;
     }
 
-    auto extent = backend_->getSwapChainExtent();
-    width_ = extent.width;
-    height_ = extent.height;
+    width_ = width;
+    height_ = height;
     channels_ = 1;
+    mip_levels_ = 1;
     vk_format_ = VK_FORMAT_D24_UNORM_S8_UINT;
     vk_usage_flags_ = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     vk_tiling_ = VK_IMAGE_TILING_OPTIMAL;
     vk_mem_props_ = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    vk_num_samples_ = num_samples;
 
     if (!createImage()) {
         if (vk_image_ != VK_NULL_HANDLE) {
@@ -158,14 +197,14 @@ bool Texture::createImage() {
     image_info.extent.width = width_;
     image_info.extent.height = height_;
     image_info.extent.depth = 1;
-    image_info.mipLevels = 1;
+    image_info.mipLevels = mip_levels_;
     image_info.arrayLayers = 1;
     image_info.format = vk_format_;
     image_info.tiling =  vk_tiling_;
     image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     image_info.usage = vk_usage_flags_;
     image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    image_info.samples = vk_num_samples_;
     image_info.flags = 0; // Optional
 
     VkImageFormatProperties image_format_props{};

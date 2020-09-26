@@ -29,7 +29,7 @@ class Texture;
 
 struct Buffer {
     std::string name;
-    size_t key = 0;
+    bool host_visible = false;
 
     VkBufferUsageFlags type = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
     VkBuffer vk_buffer = VK_NULL_HANDLE;
@@ -38,7 +38,6 @@ struct Buffer {
 
 struct UniformBuffer {
     std::string name;
-    size_t key = 0;
     size_t buffer_size = 0;
 
     std::vector<Buffer> buffers;  // one per command buffer / swap chain image
@@ -52,11 +51,12 @@ struct SwapChainSupportDetails {
 
 struct RenderPass {
     std::string name;
-    size_t key = 0;
+    VkSampleCountFlagBits msaa_samples = VK_SAMPLE_COUNT_1_BIT;
     VkRenderPass vk_render_pass = VK_NULL_HANDLE;
 
+    std::shared_ptr<Texture> colour_attachment;
+    std::shared_ptr<Texture> depth_attachment;
     std::vector<VkFramebuffer> swap_chain_framebuffers;
-    std::shared_ptr<Texture> depth_texture;
 };
 
 using BindingsMap = std::map<std::string, uint32_t>;

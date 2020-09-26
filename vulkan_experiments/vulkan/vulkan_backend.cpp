@@ -194,6 +194,21 @@ namespace {
 
         return 0;
     }
+
+    VkSampleCountFlagBits getMaxSupportedSampleCount(VkPhysicalDevice physical_device) {
+        VkPhysicalDeviceProperties physicalDeviceProperties;
+        vkGetPhysicalDeviceProperties(physical_device, &physicalDeviceProperties);
+
+        VkSampleCountFlags counts = physicalDeviceProperties.limits.framebufferColorSampleCounts & physicalDeviceProperties.limits.framebufferDepthSampleCounts;
+        if (counts & VK_SAMPLE_COUNT_64_BIT) { return VK_SAMPLE_COUNT_64_BIT; }
+        if (counts & VK_SAMPLE_COUNT_32_BIT) { return VK_SAMPLE_COUNT_32_BIT; }
+        if (counts & VK_SAMPLE_COUNT_16_BIT) { return VK_SAMPLE_COUNT_16_BIT; }
+        if (counts & VK_SAMPLE_COUNT_8_BIT) { return VK_SAMPLE_COUNT_8_BIT; }
+        if (counts & VK_SAMPLE_COUNT_4_BIT) { return VK_SAMPLE_COUNT_4_BIT; }
+        if (counts & VK_SAMPLE_COUNT_2_BIT) { return VK_SAMPLE_COUNT_2_BIT; }
+
+        return VK_SAMPLE_COUNT_1_BIT;
+}
 }
 
 // VulkanBackend
@@ -250,20 +265,6 @@ bool VulkanBackend::startUp() {
 
 void VulkanBackend::shutDown() {
     cleanupSwapChain();
-
-    for (auto& buffer : host_visible_buffers_) {
-        vkDestroyBuffer(device_, buffer.second.vk_buffer, nullptr);
-        vkFreeMemory(device_, buffer.second.vk_buffer_memory, nullptr);
-    }
-
-    host_visible_buffers_.clear();
-
-    for (auto& buffer : gpu_local_buffers_) {
-        vkDestroyBuffer(device_, buffer.second.vk_buffer, nullptr);
-        vkFreeMemory(device_, buffer.second.vk_buffer_memory, nullptr);
-    }
-
-    gpu_local_buffers_.clear();
     
     for (uint32_t i = 0; i < max_frames_in_flight_; i++) {
         vkDestroySemaphore(device_, render_finished_semaphores_[i], nullptr);
@@ -295,20 +296,26 @@ std::shared_ptr<Mesh> VulkanBackend::createMesh(const std::string& name) {
     return Mesh::createMesh(name, this);
 }
 
-RenderPass VulkanBackend::createRenderPass(const std::string& name, bool store_depth) {
+RenderPass VulkanBackend::createRenderPass(const std::string& name, VkSampleCountFlagBits msaa_samples, bool store_depth) {
+    // create multisampled colour attachment
+    auto extent = getSwapChainExtent();
+   
+    auto colour_texture = Texture::createTexture(name + "_colour_attachment", device_, this);
+    colour_texture->createColourAttachment(extent.width, extent.height, swap_chain_image_format_, 1, msaa_samples);
+
     // create depth attachment
     auto depth_texture = Texture::createTexture(name + "_depth_attachment", device_, this);
-    depth_texture->createDepthTexture();
+    depth_texture->createDepthStencilAttachment(extent.width, extent.height, msaa_samples);
 
     VkAttachmentDescription color_attachment{};
     color_attachment.format = swap_chain_image_format_;
-    color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    color_attachment.samples = msaa_samples;
     color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    color_attachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference color_attachment_ref{};
     color_attachment_ref.attachment = 0;
@@ -316,7 +323,7 @@ RenderPass VulkanBackend::createRenderPass(const std::string& name, bool store_d
 
     VkAttachmentDescription depth_attachment{};
     depth_attachment.format = depth_texture->getFormat();
-    depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depth_attachment.samples = msaa_samples;
     depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depth_attachment.storeOp = store_depth ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -328,13 +335,28 @@ RenderPass VulkanBackend::createRenderPass(const std::string& name, bool store_d
     depth_attachment_ref.attachment = 1;
     depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentDescription color_attachment_resolve{};
+    color_attachment_resolve.format = swap_chain_image_format_;
+    color_attachment_resolve.samples = VK_SAMPLE_COUNT_1_BIT;
+    color_attachment_resolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    color_attachment_resolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    color_attachment_resolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    color_attachment_resolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    color_attachment_resolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    color_attachment_resolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference color_attachment_resolve_ref{};
+    color_attachment_resolve_ref.attachment = 2;
+    color_attachment_resolve_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &color_attachment_ref;
     subpass.pDepthStencilAttachment = &depth_attachment_ref;
+    subpass.pResolveAttachments = &color_attachment_resolve_ref;
 
-    std::array<VkAttachmentDescription, 2> attachments = { color_attachment, depth_attachment };
+    std::array<VkAttachmentDescription, 3> attachments = { color_attachment, depth_attachment, color_attachment_resolve };
 
     VkRenderPassCreateInfo render_pass_info{};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -360,20 +382,21 @@ RenderPass VulkanBackend::createRenderPass(const std::string& name, bool store_d
         return RenderPass{};
     }
 
-    auto key = std::hash<std::string>{}(name);
     RenderPass render_pass;
     render_pass.name = name;
-    render_pass.key = key;
+    render_pass.msaa_samples = msaa_samples;
     render_pass.vk_render_pass = vk_render_pass;
-    render_pass.depth_texture = std::move(depth_texture);
+    render_pass.colour_attachment = std::move(colour_texture);
+    render_pass.depth_attachment = std::move(depth_texture);
 
     // create the swapchain framebuffers for this render pass
     render_pass.swap_chain_framebuffers.resize(swap_chain_image_views_.size());
 
     for (size_t i = 0; i < swap_chain_image_views_.size(); i++) {
-        std::array<VkImageView, 2> framebuffer_attachments = {
-            swap_chain_image_views_[i],
-            render_pass.depth_texture->getImageView()
+        std::array<VkImageView, 3> framebuffer_attachments = {
+            render_pass.colour_attachment->getImageView(),
+            render_pass.depth_attachment->getImageView(),
+            swap_chain_image_views_[i]
         };
 
         VkFramebufferCreateInfo framebuffer_info{};
@@ -391,8 +414,6 @@ RenderPass VulkanBackend::createRenderPass(const std::string& name, bool store_d
             return RenderPass{};
         }
     }
-
-    render_passes_.insert({ key, render_pass });
 
     return render_pass;
 }
@@ -521,9 +542,9 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-    multisampling.minSampleShading = 1.0f; // Optional
+    multisampling.sampleShadingEnable = VK_TRUE;
+    multisampling.rasterizationSamples = config.render_pass.msaa_samples;
+    multisampling.minSampleShading = 0.2f;
     multisampling.pSampleMask = nullptr; // Optional
     multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
     multisampling.alphaToOneEnable = VK_FALSE; // Optional
@@ -601,14 +622,11 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
     auto key = std::hash<std::string>{}(config.name);
     GraphicsPipeline graphics_pipeline{ 
         config.name, 
-        key, 
         pipeline_layout, 
         vk_pipeline,
         std::move(descriptors_set_layouts),
         std::move(pipeline_descriptor_metadata)
     };
-
-    pipelines_.insert({ key, graphics_pipeline });
 
     return graphics_pipeline;
 }
@@ -756,6 +774,7 @@ bool VulkanBackend::selectDevice() {
     for (const auto& device : devices) {
         if (isDeviceSuitable(device)) {
             physical_device_ = device;  // fairly confident there's only one discrete GPU in our use case
+            max_msaa_samples_ = getMaxSupportedSampleCount(device);
             break;
         }
     }
@@ -812,6 +831,7 @@ bool VulkanBackend::createLogicalDevice() {
 
     VkPhysicalDeviceFeatures device_features{};
     device_features.samplerAnisotropy = VK_TRUE;
+    device_features.sampleRateShading = VK_TRUE;
 
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -996,43 +1016,9 @@ bool VulkanBackend::createSyncObjects() {
 
 void VulkanBackend::cleanupSwapChain() {
 
-    for (auto& uniform_buffer : uniform_buffers_) {
-        for (auto& buffer : uniform_buffer.second.buffers) {
-            vkDestroyBuffer(device_, buffer.vk_buffer, nullptr);
-            vkFreeMemory(device_, buffer.vk_buffer_memory, nullptr);
-        }
-        uniform_buffer.second.buffers.clear();
-    }
-    uniform_buffers_.clear();
-
     vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
 
-    for (auto& render_pass : render_passes_) {
-        for (auto& framebuffer : render_pass.second.swap_chain_framebuffers) {
-            vkDestroyFramebuffer(device_, framebuffer, nullptr);
-        }
-        render_pass.second.swap_chain_framebuffers.clear();
-        render_pass.second.depth_texture.reset();
-    }
-
     vkFreeCommandBuffers(device_, command_pool_, static_cast<uint32_t>(command_buffers_.size()), command_buffers_.data());
-
-    for (auto& pipeline : pipelines_) {
-        for (auto& descr_set_layout : pipeline.second.vk_descriptor_set_layouts) {
-            vkDestroyDescriptorSetLayout(device_, descr_set_layout.second, nullptr);
-        }
-      
-        vkDestroyPipeline(device_, pipeline.second.vk_graphics_pipeline, nullptr);
-        vkDestroyPipelineLayout(device_, pipeline.second.vk_pipeline_layout, nullptr);
-        pipeline.second.vk_descriptor_set_layouts.clear();
-    }
-
-    for (auto& render_pass : render_passes_) {
-        vkDestroyRenderPass(device_, render_pass.second.vk_render_pass, nullptr);
-    }
-
-    pipelines_.clear();
-    render_passes_.clear();
 
     for (auto image_view : swap_chain_image_views_) {
         vkDestroyImageView(device_, image_view, nullptr);
@@ -1042,8 +1028,6 @@ void VulkanBackend::cleanupSwapChain() {
 }
 
 bool VulkanBackend::recreateSwapChain() {
-    vkDeviceWaitIdle(device_);
-
     cleanupSwapChain();
 
     if (!createSwapChain()) {
@@ -1091,8 +1075,7 @@ Buffer VulkanBackend::createIndexBuffer(const std::string& name, const std::vect
     updateBuffer<uint32_t>(staging_buffer, src_buffer);
     Buffer index_buffer = createBuffer<uint32_t>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_SHARING_MODE_EXCLUSIVE, false, true);
     copyBufferToGpuLocalMemory(staging_buffer.vk_buffer, index_buffer.vk_buffer, sizeof(uint32_t) * src_buffer.size());
-    vkDestroyBuffer(device_, staging_buffer.vk_buffer, nullptr);
-    vkFreeMemory(device_, staging_buffer.vk_buffer_memory, nullptr);
+    destroyBuffer(staging_buffer);
     return index_buffer;
 }
 
@@ -1116,6 +1099,46 @@ void VulkanBackend::updateDescriptorSets(const UniformBuffer& buffer, std::vecto
 
         vkUpdateDescriptorSets(device_, 1, &descriptor_write, 0, nullptr);
     }
+}
+
+void VulkanBackend::destroyBuffer(Buffer& buffer) {
+    vkDestroyBuffer(device_, buffer.vk_buffer, nullptr);
+    vkFreeMemory(device_, buffer.vk_buffer_memory, nullptr);
+    buffer = Buffer{};
+}
+
+void VulkanBackend::destroyRenderPass(RenderPass& render_pass) {
+    for (auto& framebuffer : render_pass.swap_chain_framebuffers) {
+        vkDestroyFramebuffer(device_, framebuffer, nullptr);
+    }
+    render_pass.swap_chain_framebuffers.clear();
+    render_pass.colour_attachment.reset();
+    render_pass.depth_attachment.reset();
+
+    vkDestroyRenderPass(device_, render_pass.vk_render_pass, nullptr);
+    
+    render_pass = RenderPass{};
+}
+
+void VulkanBackend::destroyGraphicsPipeline(GraphicsPipeline& graphics_pipeline) {
+    for (auto& descr_set_layout : graphics_pipeline.vk_descriptor_set_layouts) {
+        vkDestroyDescriptorSetLayout(device_, descr_set_layout.second, nullptr);
+    }
+    
+    vkDestroyPipeline(device_, graphics_pipeline.vk_graphics_pipeline, nullptr);
+    vkDestroyPipelineLayout(device_, graphics_pipeline.vk_pipeline_layout, nullptr);
+    graphics_pipeline.vk_descriptor_set_layouts.clear();
+    graphics_pipeline = GraphicsPipeline{};
+}
+
+void VulkanBackend::destroyUniformBuffer(UniformBuffer& uniform_buffer) {
+    for (auto& buffer : uniform_buffer.buffers) {
+        vkDestroyBuffer(device_, buffer.vk_buffer, nullptr);
+        vkFreeMemory(device_, buffer.vk_buffer_memory, nullptr);
+    }
+    uniform_buffer.buffers.clear();
+    uniform_buffer.buffer_size = 0;
+    uniform_buffer.name = "";
 }
 
 VkImageView VulkanBackend::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags) {

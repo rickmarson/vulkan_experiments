@@ -24,6 +24,7 @@ private:
 	virtual bool createGraphicsPipeline() final;
 	virtual bool recordCommands() final;
 	virtual void updateScene() final;
+	virtual void cleanupSwapChainAssets() final;
 	virtual void cleanup() final;
 
 	std::map<std::string, std::shared_ptr<ShaderModule>> shaders_;
@@ -82,10 +83,21 @@ bool VulkanTutorial::setupScene() {
 	return true;
 }
 
+void VulkanTutorial::cleanupSwapChainAssets() {
+	scene_manager_->deleteUniformBuffer();
+
+	for (auto& mesh : meshes_) {
+		mesh.second->deleteUniformBuffer();
+	}
+	
+	vulkan_backend_.destroyRenderPass(render_pass_);
+	vulkan_backend_.destroyGraphicsPipeline(graphics_pipeline_);
+}
+
 void VulkanTutorial::cleanup() {
+	cleanupSwapChainAssets();
 	meshes_.clear();
 	shaders_.clear();
-	render_pass_.depth_texture.reset();
 }
 
 void VulkanTutorial::updateScene() {
@@ -106,7 +118,7 @@ void VulkanTutorial::updateScene() {
 }
 
 bool VulkanTutorial::createGraphicsPipeline() {
-	render_pass_ = vulkan_backend_.createRenderPass("Main Pass");
+	render_pass_ = vulkan_backend_.createRenderPass("Main Pass", vulkan_backend_.getMaxMSAASamples());
 
 	GraphicsPipelineConfig config;
 	config.name = "Solid Geometry";

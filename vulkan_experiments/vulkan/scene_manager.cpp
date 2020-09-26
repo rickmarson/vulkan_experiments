@@ -42,6 +42,10 @@ void SceneManager::createUniformBuffer() {
     uniform_buffer_ = backend_->createUniformBuffer<SceneData>("scene_data"); // the buffer lifecycle is managed by the backend
 }
 
+void SceneManager::deleteUniformBuffer() {
+    backend_->destroyUniformBuffer(uniform_buffer_);
+}
+
 void SceneManager::createDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {
     const auto& layout = descriptor_set_layouts.find(SCENE_UNIFORM_SET_ID)->second;
     std::vector<VkDescriptorSetLayout> layouts(backend_->getSwapChainSize(), layout);

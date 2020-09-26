@@ -106,6 +106,10 @@ bool VulkanApp::recreateSwapChain() {
         glfwWaitEvents();
     }
 
+    vulkan_backend_.waitDeviceIdle();
+
+    cleanupSwapChainAssets();
+    
     vulkan_backend_.resetWindowSwapExtent({ static_cast<uint32_t>(width), static_cast<uint32_t>(height) });
 
     if (!vulkan_backend_.recreateSwapChain()) {
