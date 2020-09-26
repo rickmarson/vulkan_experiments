@@ -52,7 +52,7 @@ void Texture::cleanup() {
     }
 }
 
-void Texture::loadImageRGBA(const std::string& src_image_path, uint32_t mip_levels) {
+void Texture::loadImageRGBA(const std::string& src_image_path) {
     if (!isFormatSupported(backend_->getPhysicalDevice(), 
                            VK_FORMAT_R8G8B8A8_SRGB, 
                            VK_IMAGE_TILING_OPTIMAL, 
@@ -79,9 +79,9 @@ void Texture::loadImageRGBA(const std::string& src_image_path, uint32_t mip_leve
     width_ = static_cast<uint32_t>(width);
     height_ = static_cast<uint32_t>(height);
     channels_ = static_cast<uint32_t>(channels);
-    mip_levels_ = mip_levels;
+    mip_levels_ = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
     vk_format_ = VK_FORMAT_R8G8B8A8_SRGB;
-    vk_usage_flags_ = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    vk_usage_flags_ = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     vk_tiling_ = VK_IMAGE_TILING_OPTIMAL;
     vk_mem_props_ = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     vk_num_samples_ = VK_SAMPLE_COUNT_1_BIT;
@@ -103,9 +103,9 @@ void Texture::loadImageRGBA(const std::string& src_image_path, uint32_t mip_leve
 
     transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     copyBufferToImage(staging_buffer.vk_buffer, vk_image_, width_, height_);
-    transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    generateMipMaps();
 
-    vk_image_view_ = backend_->createImageView(vk_image_, vk_format_, VK_IMAGE_ASPECT_COLOR_BIT);
+    vk_image_view_ = backend_->createImageView(vk_image_, vk_format_, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels_);
 
     if (vk_image_view_ == VK_NULL_HANDLE) {
         vkDestroyImage(device_, vk_image_, nullptr);
@@ -116,7 +116,7 @@ void Texture::loadImageRGBA(const std::string& src_image_path, uint32_t mip_leve
     vkFreeMemory(device_, staging_buffer.vk_buffer_memory, nullptr);
 }
 
-void Texture::createColourAttachment(uint32_t width, uint32_t height, VkFormat format, uint32_t mip_levels, VkSampleCountFlagBits num_samples) {
+void Texture::createColourAttachment(uint32_t width, uint32_t height, VkFormat format, VkSampleCountFlagBits num_samples) {
     if (!isFormatSupported(backend_->getPhysicalDevice(),
         format,
         VK_IMAGE_TILING_OPTIMAL,
@@ -129,7 +129,7 @@ void Texture::createColourAttachment(uint32_t width, uint32_t height, VkFormat f
     width_ = width;
     height_ = height;
     channels_ = 4;
-    mip_levels_ = mip_levels;
+    mip_levels_ = 1;
     vk_format_ = format;
     vk_usage_flags_ = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     vk_tiling_ = VK_IMAGE_TILING_OPTIMAL;
@@ -242,7 +242,7 @@ void Texture::transitionImageLayout(VkImage image, VkFormat format, VkImageAspec
     barrier.image = image;
     barrier.subresourceRange.aspectMask = aspect_flags;
     barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.levelCount = mip_levels_;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
 
@@ -319,6 +319,93 @@ void Texture::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, 
     backend_->endSingleTimeCommands(command_buffer);
 }
 
+void Texture::generateMipMaps() {
+    VkFormatProperties format_properties;
+    vkGetPhysicalDeviceFormatProperties(backend_->getPhysicalDevice(), vk_format_, &format_properties);
+
+    if (!(format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+        std::cerr << "Texture image format does not support linear blitting!" << std::endl;
+        return;
+    }
+
+    VkCommandBuffer command_buffer = backend_->beginSingleTimeCommands();
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.image = vk_image_;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.levelCount = 1;
+
+    int32_t mip_width = width_;
+    int32_t mip_height = height_;
+
+    for (uint32_t i = 1; i < mip_levels_; ++i) {
+        barrier.subresourceRange.baseMipLevel = i - 1;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+        vkCmdPipelineBarrier(command_buffer,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+            0, nullptr,
+            0, nullptr,
+            1, &barrier);
+
+        VkImageBlit blit{};
+        blit.srcOffsets[0] = { 0, 0, 0 };
+        blit.srcOffsets[1] = { mip_width, mip_height, 1 };
+        blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.srcSubresource.mipLevel = i - 1;
+        blit.srcSubresource.baseArrayLayer = 0;
+        blit.srcSubresource.layerCount = 1;
+        blit.dstOffsets[0] = { 0, 0, 0 };
+        blit.dstOffsets[1] = { mip_width > 1 ? mip_width / 2 : 1, mip_height > 1 ? mip_height / 2 : 1, 1 };
+        blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.dstSubresource.mipLevel = i;
+        blit.dstSubresource.baseArrayLayer = 0;
+        blit.dstSubresource.layerCount = 1;
+
+        vkCmdBlitImage(command_buffer,
+            vk_image_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            vk_image_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1, &blit,
+            VK_FILTER_LINEAR);
+
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        vkCmdPipelineBarrier(command_buffer,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+            0, nullptr,
+            0, nullptr,
+            1, &barrier);
+
+        if (mip_width > 1) mip_width /= 2;
+        if (mip_height > 1) mip_height /= 2;
+    }
+
+    barrier.subresourceRange.baseMipLevel = mip_levels_ - 1;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(command_buffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier);
+
+    backend_->endSingleTimeCommands(command_buffer);
+}
+
 void Texture::createSampler() {
     VkSamplerCreateInfo sampler_info{};
     sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -336,7 +423,7 @@ void Texture::createSampler() {
     sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     sampler_info.mipLodBias = 0.0f;
     sampler_info.minLod = 0.0f;
-    sampler_info.maxLod = 0.0f;
+    sampler_info.maxLod = static_cast<float>(mip_levels_);
 
     if (vkCreateSampler(device_, &sampler_info, nullptr, &vk_sampler_) != VK_SUCCESS) {
         std::cerr << "Failed to create texture sampler!" << std::endl;

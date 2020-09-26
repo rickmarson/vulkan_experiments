@@ -119,7 +119,7 @@ private:
 
     VkDeviceMemory allocateDeviceMemory(VkMemoryRequirements mem_reqs, VkMemoryPropertyFlags properties);
     void copyBufferToGpuLocalMemory(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
-    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags);
+    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, uint32_t mip_levels = 1);
 
     VkPhysicalDevice getPhysicalDevice() const { return physical_device_; }
 

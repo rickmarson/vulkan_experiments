@@ -301,7 +301,7 @@ RenderPass VulkanBackend::createRenderPass(const std::string& name, VkSampleCoun
     auto extent = getSwapChainExtent();
    
     auto colour_texture = Texture::createTexture(name + "_colour_attachment", device_, this);
-    colour_texture->createColourAttachment(extent.width, extent.height, swap_chain_image_format_, 1, msaa_samples);
+    colour_texture->createColourAttachment(extent.width, extent.height, swap_chain_image_format_, msaa_samples);
 
     // create depth attachment
     auto depth_texture = Texture::createTexture(name + "_depth_attachment", device_, this);
@@ -1141,7 +1141,7 @@ void VulkanBackend::destroyUniformBuffer(UniformBuffer& uniform_buffer) {
     uniform_buffer.name = "";
 }
 
-VkImageView VulkanBackend::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags) {
+VkImageView VulkanBackend::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, uint32_t mip_levels) {
     VkImageViewCreateInfo view_info{};
     view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     view_info.image = image;
@@ -1153,7 +1153,7 @@ VkImageView VulkanBackend::createImageView(VkImage image, VkFormat format, VkIma
     view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
     view_info.subresourceRange.aspectMask = aspect_flags;
     view_info.subresourceRange.baseMipLevel = 0;
-    view_info.subresourceRange.levelCount = 1;
+    view_info.subresourceRange.levelCount = mip_levels;
     view_info.subresourceRange.baseArrayLayer = 0;
     view_info.subresourceRange.layerCount = 1;
 
