@@ -14,7 +14,7 @@
 
 // Declarations
 
-class VulkanTutorial : public VulkanApp {
+class ModelViewer : public VulkanApp {
 public:
 
 
@@ -36,9 +36,9 @@ private:
 
 // Implementation
 
-bool VulkanTutorial::loadAssets() {
+bool ModelViewer::loadAssets() {
 	auto vertex_shader = vulkan_backend_.createShaderModule("vertex");
-	vertex_shader->loadSpirvShader("shaders/tutorial_vs.spv");
+	vertex_shader->loadSpirvShader("shaders/model_viewer_vs.spv");
 
 	if (!vertex_shader->isVertexFormatCompatible(Vertex::getFormatInfo())) {
 		std::cerr << "Requested Vertex format is not compatible with pipeline input!" << std::endl;
@@ -46,7 +46,7 @@ bool VulkanTutorial::loadAssets() {
 	}
 
 	auto fragment_shader = vulkan_backend_.createShaderModule("fragment");
-	fragment_shader->loadSpirvShader("shaders/tutorial_fs.spv");
+	fragment_shader->loadSpirvShader("shaders/model_viewer_fs.spv");
 	
 	if (!vertex_shader->isValid() || !fragment_shader->isValid()) {
 		std::cerr << "Failed to validate shaders!" << std::endl;
@@ -72,7 +72,7 @@ bool VulkanTutorial::loadAssets() {
 	return true;
 }
 
-bool VulkanTutorial::setupScene() {
+bool ModelViewer::setupScene() {
 	if (!createGraphicsPipeline()) {
 		return false;
 	}
@@ -83,7 +83,7 @@ bool VulkanTutorial::setupScene() {
 	return true;
 }
 
-void VulkanTutorial::cleanupSwapChainAssets() {
+void ModelViewer::cleanupSwapChainAssets() {
 	scene_manager_->deleteUniformBuffer();
 
 	for (auto& mesh : meshes_) {
@@ -94,13 +94,13 @@ void VulkanTutorial::cleanupSwapChainAssets() {
 	vulkan_backend_.destroyGraphicsPipeline(graphics_pipeline_);
 }
 
-void VulkanTutorial::cleanup() {
+void ModelViewer::cleanup() {
 	cleanupSwapChainAssets();
 	meshes_.clear();
 	shaders_.clear();
 }
 
-void VulkanTutorial::updateScene() {
+void ModelViewer::updateScene() {
 	static auto start_time = std::chrono::high_resolution_clock::now();
 
 	auto current_time = std::chrono::high_resolution_clock::now();
@@ -117,7 +117,7 @@ void VulkanTutorial::updateScene() {
 	mesh->update();
 }
 
-bool VulkanTutorial::createGraphicsPipeline() {
+bool ModelViewer::createGraphicsPipeline() {
 	render_pass_ = vulkan_backend_.createRenderPass("Main Pass", vulkan_backend_.getMaxMSAASamples());
 
 	GraphicsPipelineConfig config;
@@ -145,7 +145,7 @@ bool VulkanTutorial::createGraphicsPipeline() {
 	return graphics_pipeline_.vk_graphics_pipeline != VK_NULL_HANDLE;
 }
 
-bool VulkanTutorial::recordCommands() {
+bool ModelViewer::recordCommands() {
 	auto& command_buffers = vulkan_backend_.getCommandBuffers();
 
 	for (size_t i = 0; i < command_buffers.size(); i++) {
@@ -203,7 +203,7 @@ bool VulkanTutorial::recordCommands() {
 // Entry point
 
 int main(int argc, char** argv) {
-	VulkanTutorial app;
+	ModelViewer app;
 	if (!app.setup()) {
 		return -1;
 	}

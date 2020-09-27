@@ -1,18 +1,18 @@
-[submodule "vulkan_experiments/utilities/glfw"]
-	path = vulkan_experiments/utilities/glfw
+[submodule "utilities/glfw"]
+	path = utilities/glfw
 	url = https://github.com/glfw/glfw.git
-[submodule "vulkan_experiments/utilities/glm"]
-	path = vulkan_experiments/utilities/glm
+[submodule "utilities/glm"]
+	path = utilities/glm
 	url = https://github.com/g-truc/glm.git
-[submodule "vulkan_experiments/utilities/imgui"]
-	path = vulkan_experiments/utilities/imgui
+[submodule "utilities/imgui"]
+	path = utilities/imgui
 	url = https://github.com/ocornut/imgui.git
-[submodule "vulkan_experiments/utilities/tinyobjloader"]
-	path = vulkan_experiments/utilities/tinyobjloader
+[submodule "utilities/tinyobjloader"]
+	path = utilities/tinyobjloader
 	url = https://github.com/tinyobjloader/tinyobjloader.git
-[submodule "vulkan_experiments/utilities/stb"]
-	path = vulkan_experiments/utilities/stb
+[submodule "utilities/stb"]
+	path = utilities/stb
 	url = https://github.com/nothings/stb.git
-[submodule "vulkan_experiments/utilities/SPIRV-Reflect"]
-	path = vulkan_experiments/utilities/SPIRV-Reflect
+[submodule "utilities/SPIRV-Reflect"]
+	path = utilities/SPIRV-Reflect
 	url = https://github.com/KhronosGroup/SPIRV-Reflect.git

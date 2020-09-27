@@ -1,11 +1,9 @@
 {
   "ExpandedNodes": [
     "",
-    "\\vulkan_experiments",
-    "\\vulkan_experiments\\experiments",
-    "\\vulkan_experiments\\shaders",
-    "\\vulkan_experiments\\vulkan"
+    "\\apps",
+    "\\apps\\model_viewer"
   ],
-  "SelectedNode": "\\vulkan_experiments\\vulkan\\vulkan_backend.cpp",
+  "SelectedNode": "\\apps\\model_viewer\\model_viewer.cpp",
   "PreviewInSolutionExplorer": false
 }
