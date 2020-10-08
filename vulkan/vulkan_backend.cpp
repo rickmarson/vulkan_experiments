@@ -296,20 +296,67 @@ std::shared_ptr<Mesh> VulkanBackend::createMesh(const std::string& name) {
     return Mesh::createMesh(name, this);
 }
 
-RenderPass VulkanBackend::createRenderPass(const std::string& name, VkSampleCountFlagBits msaa_samples, bool store_depth) {
+std::vector<VkCommandBuffer> VulkanBackend::createPrimaryCommandBuffers(uint32_t count) const {
+    std::vector<VkCommandBuffer> cmd_buffers(count);
+
+    VkCommandBufferAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    alloc_info.commandPool = command_pool_;
+    alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    alloc_info.commandBufferCount = count;
+
+    if (vkAllocateCommandBuffers(device_, &alloc_info, cmd_buffers.data()) != VK_SUCCESS) {
+        std::cerr << "Failed to allocate command buffers!" << std::endl;
+        cmd_buffers.clear();
+        return cmd_buffers;
+    }
+
+    return cmd_buffers;
+}
+
+std::vector<VkCommandBuffer> VulkanBackend::createSecondaryCommandBuffers(uint32_t count) const {
+    std::vector<VkCommandBuffer> secondary_cmd_buffers(count);
+
+    VkCommandBufferAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    alloc_info.commandPool = command_pool_;
+    alloc_info.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+    alloc_info.commandBufferCount = count;
+
+    if (vkAllocateCommandBuffers(device_, &alloc_info, secondary_cmd_buffers.data()) != VK_SUCCESS) {
+        std::cerr << "Failed to allocate command buffers!" << std::endl;
+        secondary_cmd_buffers.clear();
+        return secondary_cmd_buffers;
+    }
+
+    return secondary_cmd_buffers;
+}
+
+void VulkanBackend::resetCommandBuffers(std::vector<VkCommandBuffer>& cmd_buffers) const {
+    for (auto& buffer : cmd_buffers) {
+        vkResetCommandBuffer(buffer, 0);
+    }
+}
+
+void VulkanBackend::freeCommandBuffers(std::vector<VkCommandBuffer>& cmd_buffers) const {
+    vkFreeCommandBuffers(device_, command_pool_, static_cast<uint32_t>(cmd_buffers.size()), cmd_buffers.data());
+    cmd_buffers.clear();
+}
+
+RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
     // create multisampled colour attachment
     auto extent = getSwapChainExtent();
    
-    auto colour_texture = Texture::createTexture(name + "_colour_attachment", device_, this);
-    colour_texture->createColourAttachment(extent.width, extent.height, swap_chain_image_format_, msaa_samples);
+    auto colour_texture = Texture::createTexture(config.name + "_colour_attachment", device_, this);
+    colour_texture->createColourAttachment(extent.width, extent.height, swap_chain_image_format_, config.msaa_samples);
 
     // create depth attachment
-    auto depth_texture = Texture::createTexture(name + "_depth_attachment", device_, this);
-    depth_texture->createDepthStencilAttachment(extent.width, extent.height, msaa_samples);
+    auto depth_texture = Texture::createTexture(config.name + "_depth_attachment", device_, this);
+    depth_texture->createDepthStencilAttachment(extent.width, extent.height, config.msaa_samples);
 
     VkAttachmentDescription color_attachment{};
     color_attachment.format = swap_chain_image_format_;
-    color_attachment.samples = msaa_samples;
+    color_attachment.samples = config.msaa_samples;
     color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -323,9 +370,9 @@ RenderPass VulkanBackend::createRenderPass(const std::string& name, VkSampleCoun
 
     VkAttachmentDescription depth_attachment{};
     depth_attachment.format = depth_texture->getFormat();
-    depth_attachment.samples = msaa_samples;
+    depth_attachment.samples = config.msaa_samples;
     depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depth_attachment.storeOp = store_depth ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth_attachment.storeOp = config.store_depth ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -349,12 +396,45 @@ RenderPass VulkanBackend::createRenderPass(const std::string& name, VkSampleCoun
     color_attachment_resolve_ref.attachment = 2;
     color_attachment_resolve_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &color_attachment_ref;
-    subpass.pDepthStencilAttachment = &depth_attachment_ref;
-    subpass.pResolveAttachments = &color_attachment_resolve_ref;
+    std::vector<VkSubpassDescription> subpasses;
+    std::vector<VkSubpassDependency> subpass_dependencies;
+    auto subpass_count = config.enable_overlays ? 2 : 1;
+    subpasses.resize(subpass_count);
+    subpass_dependencies.resize(subpass_count);
+    
+    subpasses[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpasses[0].colorAttachmentCount = 1;
+    subpasses[0].pColorAttachments = &color_attachment_ref;
+    subpasses[0].pDepthStencilAttachment = &depth_attachment_ref;
+
+    if (!config.enable_overlays) {
+        subpasses[0].pResolveAttachments = &color_attachment_resolve_ref;
+    }
+    else {
+        subpasses[0].pResolveAttachments = nullptr;
+    }
+
+    subpass_dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    subpass_dependencies[0].dstSubpass = config.enable_overlays ? 1 : 0;
+    subpass_dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subpass_dependencies[0].srcAccessMask = 0;
+    subpass_dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subpass_dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    if (config.enable_overlays) {
+        subpasses[1].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpasses[1].colorAttachmentCount = 1;
+        subpasses[1].pColorAttachments = &color_attachment_ref;
+        subpasses[1].pDepthStencilAttachment = nullptr;
+        subpasses[1].pResolveAttachments = &color_attachment_resolve_ref;
+
+        subpass_dependencies[1].srcSubpass = 0;
+        subpass_dependencies[1].dstSubpass = 1;
+        subpass_dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        subpass_dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        subpass_dependencies[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        subpass_dependencies[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    }
 
     std::array<VkAttachmentDescription, 3> attachments = { color_attachment, depth_attachment, color_attachment_resolve };
 
@@ -362,19 +442,10 @@ RenderPass VulkanBackend::createRenderPass(const std::string& name, VkSampleCoun
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     render_pass_info.attachmentCount = static_cast<uint32_t>(attachments.size());;
     render_pass_info.pAttachments = attachments.data();
-    render_pass_info.subpassCount = 1;
-    render_pass_info.pSubpasses = &subpass;
-
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    render_pass_info.dependencyCount = 1;
-    render_pass_info.pDependencies = &dependency;
+    render_pass_info.subpassCount = static_cast<uint32_t>(subpasses.size());
+    render_pass_info.pSubpasses = subpasses.data();
+    render_pass_info.dependencyCount = static_cast<uint32_t>(subpass_dependencies.size());
+    render_pass_info.pDependencies = subpass_dependencies.data();
 
     VkRenderPass vk_render_pass;
     if (vkCreateRenderPass(device_, &render_pass_info, nullptr, &vk_render_pass) != VK_SUCCESS) {
@@ -383,8 +454,8 @@ RenderPass VulkanBackend::createRenderPass(const std::string& name, VkSampleCoun
     }
 
     RenderPass render_pass;
-    render_pass.name = name;
-    render_pass.msaa_samples = msaa_samples;
+    render_pass.name = config.name;
+    render_pass.msaa_samples = config.msaa_samples;
     render_pass.vk_render_pass = vk_render_pass;
     render_pass.colour_attachment = std::move(colour_texture);
     render_pass.depth_attachment = std::move(depth_texture);
@@ -494,6 +565,37 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
         descriptors_set_layouts_aux.push_back(layout.second);
     }
 
+    // assemble push constants  
+    std::vector<VkPushConstantRange> push_constants_array;
+    PushConstantsMap push_constants_map;
+    auto compare = [](const PushConstantBlock& a, const PushConstantBlock& b) { return a.name < b.name; };
+    std::set<PushConstantBlock, decltype(compare)> push_constants_temp(compare);
+
+    const auto& vertex_push_constants = config.vertex->getPushConstants();
+    const auto& fragment_push_constants = config.fragment->getPushConstants();
+
+    for (const auto& pc : vertex_push_constants) {
+        push_constants_temp.insert(pc);
+    }
+
+    for (const auto& pc : fragment_push_constants) {
+        auto dst_iter = push_constants_temp.find(pc);
+        if ( dst_iter == push_constants_temp.end()) {
+            push_constants_temp.insert(pc);
+        } else {
+            auto new_block = *(dst_iter);
+            new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
+            push_constants_temp.erase(dst_iter);
+            push_constants_temp.insert(new_block);
+        }
+    }
+    
+    for (auto& pc : push_constants_temp) {
+        push_constants_array.push_back(pc.push_constant_range);
+        push_constants_map.insert({pc.name, pc.push_constant_range});
+    }
+    push_constants_temp.clear();
+
     // fixed functionality configuration
 
     VkPipelineVertexInputStateCreateInfo vertex_input_info{};
@@ -531,9 +633,9 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rasterizer.depthClampEnable = VK_FALSE;
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.polygonMode = config.showWireframe ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = config.cullBackFace ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
     rasterizer.depthBiasConstantFactor = 0.0f; // Optional
@@ -551,13 +653,13 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
 
     VkPipelineColorBlendAttachmentState color_blend_attachment{};
     color_blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    color_blend_attachment.blendEnable = VK_FALSE;
-    color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE; // Optional
-    color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
-    color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD; // Optional
-    color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE; // Optional
-    color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
-    color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD; // Optional
+    color_blend_attachment.blendEnable = config.enableTransparency ? VK_TRUE : VK_FALSE;
+    color_blend_attachment.srcColorBlendFactor = config.enableTransparency ? VK_BLEND_FACTOR_SRC_ALPHA : VK_BLEND_FACTOR_ONE;
+    color_blend_attachment.dstColorBlendFactor = config.enableTransparency ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : VK_BLEND_FACTOR_ZERO;
+    color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD; 
+    color_blend_attachment.srcAlphaBlendFactor = config.enableTransparency ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : VK_BLEND_FACTOR_ONE;
+    color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO; 
+    color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD; 
 
     VkPipelineColorBlendStateCreateInfo color_blending{};
     color_blending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -572,22 +674,22 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
 
     VkPipelineDepthStencilStateCreateInfo depth_stencil{};
     depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depth_stencil.depthTestEnable = VK_TRUE;
-    depth_stencil.depthWriteEnable = VK_TRUE;
+    depth_stencil.depthTestEnable = config.enableDepthTesting ? VK_TRUE : VK_FALSE;
+    depth_stencil.depthWriteEnable = config.enableDepthTesting ? VK_TRUE : VK_FALSE;
     depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS;
     depth_stencil.depthBoundsTestEnable = VK_FALSE;
     depth_stencil.minDepthBounds = 0.0f; // Optional
     depth_stencil.maxDepthBounds = 1.0f; // Optional
-    depth_stencil.stencilTestEnable = VK_FALSE;
-    // depth_stencil.front = {}; // Optional
-    // depth_stencil.back = {}; // Optional
+    depth_stencil.stencilTestEnable = config.enableStencilTest ? VK_TRUE : VK_FALSE;
+    depth_stencil.front = {}; // Optional
+    depth_stencil.back = {}; // Optional
 
     VkPipelineLayoutCreateInfo pipeline_layout_info{};
     pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(descriptors_set_layouts_aux.size());
     pipeline_layout_info.pSetLayouts = descriptors_set_layouts_aux.data();
-    pipeline_layout_info.pushConstantRangeCount = 0; // Optional
-    pipeline_layout_info.pPushConstantRanges = nullptr; // Optional
+    pipeline_layout_info.pushConstantRangeCount = push_constants_array.size();
+    pipeline_layout_info.pPushConstantRanges = push_constants_array.size() > 0 ? push_constants_array.data() : nullptr;
 
     VkPipelineLayout pipeline_layout;
     if (vkCreatePipelineLayout(device_, &pipeline_layout_info, nullptr, &pipeline_layout) != VK_SUCCESS) {
@@ -609,7 +711,7 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
     pipeline_info.pDynamicState = nullptr; // Optional
     pipeline_info.layout = pipeline_layout;
     pipeline_info.renderPass = config.render_pass.vk_render_pass;
-    pipeline_info.subpass = 0;
+    pipeline_info.subpass = config.subpass_number;
     pipeline_info.basePipelineHandle = VK_NULL_HANDLE; // Optional
     pipeline_info.basePipelineIndex = -1; // Optional
     
@@ -625,32 +727,52 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
         pipeline_layout, 
         vk_pipeline,
         std::move(descriptors_set_layouts),
-        std::move(pipeline_descriptor_metadata)
+        std::move(pipeline_descriptor_metadata),
+        std::move(push_constants_map)
     };
 
     return graphics_pipeline;
 }
 
-VkResult VulkanBackend::submitCommands() {
+VkResult VulkanBackend::startNextFrame(uint32_t& swapchain_image, bool window_resized) {
+    if (window_resized) {
+        return VK_ERROR_OUT_OF_DATE_KHR;
+    }
+
     vkWaitForFences(device_, 1, &in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
 
-    uint32_t image_index;
-    VkResult result = vkAcquireNextImageKHR(device_, swap_chain_, UINT64_MAX, image_available_semaphores_[current_frame_], VK_NULL_HANDLE, &image_index);
+    VkResult result = vkAcquireNextImageKHR(device_, swap_chain_, UINT64_MAX, image_available_semaphores_[current_frame_], VK_NULL_HANDLE, &swapchain_image);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        return result;
-    }
-    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+    auto needs_rebuilding = (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR);
+    auto error = (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR);
+
+    if (error) {
         std::cerr << "Failed to acquire swap chain image!" << std::endl;
-        return result;
+    }
+    if (needs_rebuilding) {
+        std::cerr << "Swapchain is out of date. Rebuilding..." << std::endl;
+    }
+    if (error || needs_rebuilding) {
+        // clear the image semaphore as we won't be submitting the queue that waits for it this frame
+        vkDestroySemaphore(device_, image_available_semaphores_[current_frame_], nullptr);
+
+        VkSemaphoreCreateInfo semaphore_info{};
+        semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        if (vkCreateSemaphore(device_, &semaphore_info, nullptr, &image_available_semaphores_[current_frame_]) != VK_SUCCESS) {
+            std::cerr << "Failed to reset the semaphore for swapchain image " << current_frame_ << std::endl;
+        }   
     }
 
+    return result;
+}
+
+VkResult VulkanBackend::submitCommands(uint32_t swapchain_image, const std::vector<VkCommandBuffer>& command_buffers) {
     // Check if a previous frame is using this image (i.e. there is its fence to wait on)
-    if (images_in_flight_[image_index] != VK_NULL_HANDLE) {
-        vkWaitForFences(device_, 1, &images_in_flight_[image_index], VK_TRUE, UINT64_MAX);
+    if (images_in_flight_[swapchain_image] != VK_NULL_HANDLE) {
+        vkWaitForFences(device_, 1, &images_in_flight_[swapchain_image], VK_TRUE, UINT64_MAX);
     }
     // Mark the image as now being in use by this frame
-    images_in_flight_[image_index] = in_flight_fences_[current_frame_];
+    images_in_flight_[swapchain_image] = in_flight_fences_[current_frame_];
 
     VkSubmitInfo submit_info{};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -660,8 +782,8 @@ VkResult VulkanBackend::submitCommands() {
     submit_info.waitSemaphoreCount = 1;
     submit_info.pWaitSemaphores = wait_semaphores;
     submit_info.pWaitDstStageMask = wait_stages;
-    submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &command_buffers_[image_index];
+    submit_info.commandBufferCount = static_cast<uint32_t>(command_buffers.size());
+    submit_info.pCommandBuffers = command_buffers.data();
 
     VkSemaphore signal_semaphores[] = { render_finished_semaphores_[current_frame_] };
     submit_info.signalSemaphoreCount = 1;
@@ -669,7 +791,7 @@ VkResult VulkanBackend::submitCommands() {
 
     vkResetFences(device_, 1, &in_flight_fences_[current_frame_]);
 
-    result = vkQueueSubmit(graphics_queue_, 1, &submit_info, in_flight_fences_[current_frame_]);
+    VkResult result = vkQueueSubmit(graphics_queue_, 1, &submit_info, in_flight_fences_[current_frame_]);
     if (result != VK_SUCCESS) {
         std::cerr << "Failed to submit draw command buffer!" << std::endl;
         return result;
@@ -684,7 +806,7 @@ VkResult VulkanBackend::submitCommands() {
     VkSwapchainKHR swap_chains[] = { swap_chain_ };
     present_info.swapchainCount = 1;
     present_info.pSwapchains = swap_chains;
-    present_info.pImageIndices = &image_index;
+    present_info.pImageIndices = &swapchain_image;
     present_info.pResults = nullptr; // Optional
 
     result = vkQueuePresentKHR(present_queue_, &present_info);
@@ -749,9 +871,6 @@ bool VulkanBackend::initVulkan() {
         return false;
     }
     if (!createCommandPool()) {
-        return false;
-    }
-    if (!createCommandBuffers()) {
         return false;
     }
     if (!createSyncObjects()) {
@@ -936,27 +1055,10 @@ bool VulkanBackend::createCommandPool() {
     VkCommandPoolCreateInfo pool_info{};
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     pool_info.queueFamilyIndex = queue_family_indices.graphics_family.value();
-    pool_info.flags = 0; // Optional
+    pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
     if (vkCreateCommandPool(device_, &pool_info, nullptr, &command_pool_) != VK_SUCCESS) {
         std::cerr << "Failed to create command pool!" << std::endl;
-        return false;
-    }
-
-    return true;
-}
-
-bool VulkanBackend::createCommandBuffers() {
-    command_buffers_.resize(swap_chain_image_views_.size());
-
-    VkCommandBufferAllocateInfo alloc_info{};
-    alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    alloc_info.commandPool = command_pool_;
-    alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    alloc_info.commandBufferCount = (uint32_t)command_buffers_.size();
-
-    if (vkAllocateCommandBuffers(device_, &alloc_info, command_buffers_.data()) != VK_SUCCESS) {
-        std::cerr << "Failed to allocate command buffers!" << std::endl;
         return false;
     }
 
@@ -1018,8 +1120,6 @@ void VulkanBackend::cleanupSwapChain() {
 
     vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
 
-    vkFreeCommandBuffers(device_, command_pool_, static_cast<uint32_t>(command_buffers_.size()), command_buffers_.data());
-
     for (auto image_view : swap_chain_image_views_) {
         vkDestroyImageView(device_, image_view, nullptr);
     }
@@ -1034,9 +1134,6 @@ bool VulkanBackend::recreateSwapChain() {
         return false;
     }
     if (!createImageViews()) {
-        return false;
-    }
-    if (!createCommandBuffers()) {
         return false;
     }
     
@@ -1068,15 +1165,6 @@ void VulkanBackend::copyBufferToGpuLocalMemory(VkBuffer src_buffer, VkBuffer dst
     vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
 
     endSingleTimeCommands(command_buffer);
-}
-
-Buffer VulkanBackend::createIndexBuffer(const std::string& name, const std::vector<uint32_t>& src_buffer) {
-    Buffer staging_buffer = createBuffer<uint32_t>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, true, false);
-    updateBuffer<uint32_t>(staging_buffer, src_buffer);
-    Buffer index_buffer = createBuffer<uint32_t>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_SHARING_MODE_EXCLUSIVE, false, true);
-    copyBufferToGpuLocalMemory(staging_buffer.vk_buffer, index_buffer.vk_buffer, sizeof(uint32_t) * src_buffer.size());
-    destroyBuffer(staging_buffer);
-    return index_buffer;
 }
 
 void VulkanBackend::updateDescriptorSets(const UniformBuffer& buffer, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding) {

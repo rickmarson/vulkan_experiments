@@ -7,12 +7,14 @@ cmake_minimum_required (VERSION 3.8)
 file(GLOB TUTORIAL_SRCS "model_viewer.cpp")
 
 add_executable(model_viewer ${TUTORIAL_SRCS} ${TUTORIAL_HDRS})
-add_dependencies(model_viewer glfw tinyobjloader vulkan shaders)
+add_dependencies(model_viewer glfw tinyobjloader imgui vulkan shaders)
 
-target_link_libraries(model_viewer ${Vulkan_LIBRARIES} glfw tinyobjloader vulkan)
+target_link_libraries(model_viewer ${Vulkan_LIBRARIES} glfw tinyobjloader imgui vulkan)
 
 file(GLOB SHADERS "${CMAKE_SOURCE_DIR}/shaders/model_viewer_vs.spv"
                   "${CMAKE_SOURCE_DIR}/shaders/model_viewer_fs.spv")
+set(SHADERS ${SHADERS} ${IMGUI_SHADERS})
+
 file(GLOB OBJECTS "${CMAKE_SOURCE_DIR}/meshes/viking_room.obj" 
                   "${CMAKE_SOURCE_DIR}/meshes/viking_room.mtl")
 file(GLOB TEXTURES "${CMAKE_SOURCE_DIR}/textures/viking_room.png")

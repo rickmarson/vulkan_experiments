@@ -2,8 +2,14 @@
   "ExpandedNodes": [
     "",
     "\\apps",
-    "\\apps\\model_viewer"
+    "\\apps\\model_viewer",
+    "\\docker",
+    "\\docker\\linux",
+    "\\docker\\linux\\base_image",
+    "\\shaders",
+    "\\utilities\\imgui\\examples",
+    "\\vulkan"
   ],
-  "SelectedNode": "\\apps\\model_viewer\\model_viewer.cpp",
+  "SelectedNode": "\\utilities",
   "PreviewInSolutionExplorer": false
 }

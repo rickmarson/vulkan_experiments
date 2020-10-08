@@ -198,6 +198,7 @@ void ShaderModule::loadSpirvShader(const std::string& spirv_file_path) {
     vk_shader_stage_ = static_cast<VkShaderStageFlagBits>(reflect_module.shader_stage);
 
     extractUniformBufferLayouts(reflect_module);
+    extractPushConstants(reflect_module);
 
     if (vk_shader_stage_ == VK_SHADER_STAGE_VERTEX_BIT) {
         extractInputVariables(reflect_module);
@@ -252,6 +253,20 @@ void ShaderModule::extractUniformBufferLayouts(SpvReflectShaderModule& reflect_m
         vk_set.create_info.pBindings = vk_set.layout_bindings.data();
 
         descriptors_metadata_.set_bindings[src_set.set] = std::move(bindings_map);
+    }
+}
+
+void ShaderModule::extractPushConstants(SpvReflectShaderModule& reflect_module) {
+    for (uint32_t i = 0; i < reflect_module.push_constant_block_count; ++i) {
+        auto src_pc_block = reflect_module.push_constant_blocks[i];
+        
+        PushConstantBlock pc_block;
+        pc_block.name = src_pc_block.name;
+        pc_block.push_constant_range.stageFlags = vk_shader_stage_;
+        pc_block.push_constant_range.offset = src_pc_block.offset;
+        pc_block.push_constant_range.size = src_pc_block.size;
+
+        push_constants_.push_back(pc_block);
     }
 }
 

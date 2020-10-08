@@ -113,7 +113,7 @@ bool Mesh::loadObjModel(const std::string& obj_file_path) {
     index_count_ = static_cast<uint32_t>(indices.size());
 
     vertex_buffer_ = backend_->createVertexBuffer<Vertex>(name_ + "_vertices", vertices);
-    index_buffer_ = backend_->createIndexBuffer(name_ + "_indices", indices);
+    index_buffer_ = backend_->createIndexBuffer<uint32_t>(name_ + "_indices", indices);
     return vertex_buffer_.vk_buffer != VK_NULL_HANDLE && index_buffer_.vk_buffer != VK_NULL_HANDLE;
 }
 

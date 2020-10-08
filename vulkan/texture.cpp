@@ -52,7 +52,7 @@ void Texture::cleanup() {
     }
 }
 
-void Texture::loadImageRGBA(const std::string& src_image_path) {
+void Texture::loadImageRGBA(const std::string& src_image_path, bool generateMipMaps) {
     if (!isFormatSupported(backend_->getPhysicalDevice(), 
                            VK_FORMAT_R8G8B8A8_SRGB, 
                            VK_IMAGE_TILING_OPTIMAL, 
@@ -76,9 +76,17 @@ void Texture::loadImageRGBA(const std::string& src_image_path) {
     auto pixels = std::vector<stbi_uc>(stb_pixels, stb_pixels + bytes);
     stbi_image_free(stb_pixels);
 
-    width_ = static_cast<uint32_t>(width);
-    height_ = static_cast<uint32_t>(height);
-    channels_ = static_cast<uint32_t>(channels);
+    loadImageRGBA(static_cast<uint32_t>(width), 
+                  static_cast<uint32_t>(height), 
+                  static_cast<uint32_t>(channels),
+                  generateMipMaps,
+                  pixels);
+}
+
+void Texture::loadImageRGBA(uint32_t width, uint32_t height, uint32_t channels, bool genMipMaps, const std::vector<unsigned char>& pixels) {
+    width_ = width;
+    height_ = height;
+    channels_ = channels;
     mip_levels_ = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
     vk_format_ = VK_FORMAT_R8G8B8A8_SRGB;
     vk_usage_flags_ = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -86,10 +94,8 @@ void Texture::loadImageRGBA(const std::string& src_image_path) {
     vk_mem_props_ = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     vk_num_samples_ = VK_SAMPLE_COUNT_1_BIT;
 
-    Buffer staging_buffer = backend_->createBuffer<stbi_uc>("image_staging_buffer", pixels, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, true, false);
+    Buffer staging_buffer = backend_->createBuffer<stbi_uc>("image_staging_buffer", pixels, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, true);
     backend_->updateBuffer<stbi_uc>(staging_buffer, pixels);
-
-    pixels.clear();
 
     if (!createImage()) {
         vkDestroyBuffer(device_, staging_buffer.vk_buffer, nullptr);
@@ -97,13 +103,18 @@ void Texture::loadImageRGBA(const std::string& src_image_path) {
         if (vk_image_ != VK_NULL_HANDLE) {
             vkDestroyImage(device_, vk_image_, nullptr);
         }
-        stbi_image_free(stb_pixels);
         return;
     }
 
     transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     copyBufferToImage(staging_buffer.vk_buffer, vk_image_, width_, height_);
-    generateMipMaps();
+    
+    if (genMipMaps) {
+        generateMipMaps();
+    }
+    else {
+        transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
 
     vk_image_view_ = backend_->createImageView(vk_image_, vk_format_, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels_);
 

@@ -29,7 +29,20 @@ add_custom_target(shaders ALL ${COMPILE_SHADERS_CMD} ${CMAKE_SOURCE_DIR})
 
 set(SPIRV_REFLECT_FOLDER ${CMAKE_CURRENT_SOURCE_DIR}/utilities/SPIRV-Reflect)
 
+# Setup target for ImGui 
+set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/utilities/imgui)
+set(IMGUI_SOURCES ${IMGUI_DIR}/imgui.cpp 
+		          ${IMGUI_DIR}/imgui_draw.cpp 
+				  ${IMGUI_DIR}/imgui_widgets.cpp
+)
+set(IMGUI_SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/imgui_vs.spv
+	              ${CMAKE_CURRENT_SOURCE_DIR}/shaders/imgui_fs.spv)
+
+include_directories(${IMGUI_DIR})
+add_library(imgui STATIC ${IMGUI_SOURCES})
+
 # Include sub-projects.
+
 set(TINYOBJLOADER_USE_DOUBLE OFF CACHE BOOL "disable TINYOBJLOADER_USE_DOUBLE")
 add_subdirectory("utilities/tinyobjloader")
 add_subdirectory("utilities/glfw")

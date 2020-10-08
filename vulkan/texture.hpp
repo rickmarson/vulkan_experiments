@@ -19,7 +19,8 @@ public:
     static std::shared_ptr<Texture> createTexture(const std::string& name, VkDevice device, VulkanBackend* backend);
 
     const std::string& getName() const { return name_; }
-    void loadImageRGBA(const std::string& src_image_path);
+    void loadImageRGBA(const std::string& src_image_path, bool generateMipMaps = true);
+    void loadImageRGBA(uint32_t width, uint32_t height, uint32_t channels, bool genMipMaps, const std::vector<unsigned char>& pixels);
     void createColourAttachment(uint32_t width, uint32_t height, VkFormat format, VkSampleCountFlagBits num_samples);
     void createDepthStencilAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits num_samples);
     bool isValid() const { return vk_image_ != VK_NULL_HANDLE && vk_memory_ != VK_NULL_HANDLE && vk_image_view_ != VK_NULL_HANDLE; }
@@ -29,6 +30,7 @@ public:
     void updateDescriptorSets(std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding_point);
 
     VkFormat getFormat() const { return vk_format_; }
+    VkImage getImage() const { return vk_image_; }
     VkImageView getImageView() const { return vk_image_view_; }
 
 private:

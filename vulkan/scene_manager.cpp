@@ -7,6 +7,9 @@
 #include "scene_manager.hpp"
 #include "vulkan_backend.hpp"
 
+std::unique_ptr<SceneManager> SceneManager::create(VulkanBackend* backend) {
+    return std::make_unique<SceneManager>(backend);
+}
 
 SceneManager::SceneManager(VulkanBackend* backend) :
 	backend_(backend) {

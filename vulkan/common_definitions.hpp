@@ -16,6 +16,7 @@
 #include <map>
 #include <unordered_map>
 #include <set>
+#include <tuple>
 #include <array>
 #include <utility>
 #include <vector>
@@ -59,9 +60,27 @@ struct RenderPass {
     std::vector<VkFramebuffer> swap_chain_framebuffers;
 };
 
+using RecordCommandsResult = std::tuple<bool, std::vector<VkCommandBuffer>>;
+inline RecordCommandsResult makeRecordCommandsResult(bool success, std::vector<VkCommandBuffer>& command_buffers) {
+    return std::make_tuple(success, command_buffers);
+}
+
 using BindingsMap = std::map<std::string, uint32_t>;
 struct DescriptorSetMetadata {
     std::map<uint32_t, BindingsMap> set_bindings;
+};
+
+using PushConstantsMap = std::map<std::string, VkPushConstantRange>;
+
+struct GraphicsPipeline {
+    std::string name;
+
+    VkPipelineLayout vk_pipeline_layout = VK_NULL_HANDLE;
+    VkPipeline vk_graphics_pipeline = VK_NULL_HANDLE;
+    std::map<uint32_t, VkDescriptorSetLayout> vk_descriptor_set_layouts;
+
+    DescriptorSetMetadata descriptor_metadata;
+    PushConstantsMap push_constants;
 };
 
 // shader interfaces
@@ -97,3 +116,13 @@ struct ModelData {
 const uint32_t MODEL_UNIFORM_SET_ID = 1;
 const std::string MODEL_DATA_BINDING_NAME = "model";  // holds model-specific numeric data (model transform, etc...)
 const std::string DIFFUSE_SAMPLER_BINDING_NAME = "diffuse_sampler";  // holds the diffuse texture of the surface / mesh being drawn
+
+
+struct UiTransform {
+    glm::vec2 scale;
+    glm::vec2 translate;
+}; // push constant
+const std::string UI_TRANSFORM_PUSH_CONSTANT = "UiTransform";
+
+const uint32_t UI_UNIFORM_SET_ID = 0;
+const std::string UI_TEXTURE_SAMPLER_BINDING_NAME = "fonts_sampler"; 

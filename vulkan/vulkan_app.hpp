@@ -6,10 +6,9 @@
 
 #pragma once
 
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-
 #include "vulkan_backend.hpp"
+
+struct GLFWwindow;
 
 class VulkanApp {
 public:
@@ -22,17 +21,17 @@ protected:
     // boilerplate creation and cleanup
     void createWindow();
     bool recreateSwapChain();
+    void mainLoop();
 
     virtual bool createGraphicsPipeline() = 0;
-    virtual bool recordCommands() = 0;
 
     // actual rendering code
-    void mainLoop();
     void drawFrame();
 
     virtual bool loadAssets() = 0;
     virtual bool setupScene() = 0;
     virtual void updateScene() = 0;
+    virtual RecordCommandsResult recordCommands(uint32_t swapchain_image) = 0;
     virtual void cleanupSwapChainAssets() = 0;
     virtual void cleanup() = 0;
 

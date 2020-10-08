@@ -6,12 +6,8 @@
 
 #include "vulkan_app.hpp"
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/vec4.hpp>
-#include <glm/mat4x4.hpp>
-
-#include <algorithm>
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
 
 // Additional Helper Functions
 namespace {
@@ -83,7 +79,7 @@ void VulkanApp::createWindow() {
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-
+   
     window_ = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Tutorial", nullptr, nullptr);
     glfwSetWindowUserPointer(window_, this);
     glfwSetFramebufferSizeCallback(window_, framebufferResizeCallback);
@@ -124,12 +120,26 @@ bool VulkanApp::recreateSwapChain() {
 }
 
 void VulkanApp::drawFrame() {
-    VkResult result = vulkan_backend_.submitCommands();
+    uint32_t next_swapchain_image = 0;
+    VkResult result = vulkan_backend_.startNextFrame(next_swapchain_image, window_resized_);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window_resized_) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         window_resized_ = false;
         if (!recreateSwapChain()) {
             std::cerr << "Failed to re-create swap chain!" << std::endl;
         }
+        return;
+    }
+
+    auto commands = recordCommands(next_swapchain_image);
+    auto success = std::get<0>(commands);
+
+    if (success) {
+        auto cmd_buffer = std::get<1>(commands);
+        result = vulkan_backend_.submitCommands(next_swapchain_image, cmd_buffer);
+    }
+
+    if (result != VK_SUCCESS) {
+        std::cerr << "Submit Commands failed!" << std::endl;
     }
 }

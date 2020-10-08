@@ -13,6 +13,8 @@ class VulkanBackend;
 
 class SceneManager {
 public:
+	static std::unique_ptr<SceneManager> create(VulkanBackend* backend);
+
 	explicit SceneManager(VulkanBackend* backend);
 	~SceneManager();
 
