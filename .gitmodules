@@ -4,9 +4,6 @@
 [submodule "utilities/glm"]
 	path = utilities/glm
 	url = https://github.com/g-truc/glm.git
-[submodule "utilities/imgui"]
-	path = utilities/imgui
-	url = https://github.com/ocornut/imgui.git
 [submodule "utilities/tinyobjloader"]
 	path = utilities/tinyobjloader
 	url = https://github.com/tinyobjloader/tinyobjloader.git
@@ -16,3 +13,6 @@
 [submodule "utilities/SPIRV-Reflect"]
 	path = utilities/SPIRV-Reflect
 	url = https://github.com/KhronosGroup/SPIRV-Reflect.git
+[submodule "utilities/imgui"]
+	path = utilities/imgui
+	url = https://github.com/ocornut/imgui.git
