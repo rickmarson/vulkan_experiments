@@ -17,7 +17,9 @@
 
 class ModelViewer : public VulkanApp {
 public:
-
+	ModelViewer() {
+		setWindowTitle("Model Viewer");
+	}
 
 private:
 	virtual bool loadAssets() final;

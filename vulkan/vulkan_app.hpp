@@ -19,6 +19,7 @@ public:
 
 protected:
     // boilerplate creation and cleanup
+    void setWindowTitle(const std::string& title) { window_title_ = title; }
     void createWindow();
     bool recreateSwapChain();
     void mainLoop();
@@ -40,6 +41,7 @@ protected:
     const uint32_t HEIGHT = 1200;
     GLFWwindow* window_ = nullptr;
     bool window_resized_ = false;
+    std::string window_title_;
 
     VulkanBackend vulkan_backend_;
 };

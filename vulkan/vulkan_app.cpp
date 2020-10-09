@@ -80,7 +80,7 @@ void VulkanApp::createWindow() {
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
    
-    window_ = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Tutorial", nullptr, nullptr);
+    window_ = glfwCreateWindow(WIDTH, HEIGHT, window_title_.c_str(), nullptr, nullptr);
     glfwSetWindowUserPointer(window_, this);
     glfwSetFramebufferSizeCallback(window_, framebufferResizeCallback);
 }
