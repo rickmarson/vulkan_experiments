@@ -4,7 +4,7 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update \
   && apt-get -y install sudo \
   && apt-get upgrade -y \
-  && apt-get install -y build-essential git unzip curl wget gcc g++ cmake
+  && apt-get install -y build-essential git unzip curl wget cmake
   && apt-get install -y \
     libgl1 \
     libgl1-mesa-glx \
