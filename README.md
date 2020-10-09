@@ -5,7 +5,9 @@ Most of the original boilerplate code comes from the [Vulkan Tutorial](https://v
 Major differences include:
 
 - Integration of the [SPIRV-Reflect](https://github.com/KhronosGroup/SPIRV-Reflect.git) library to automate parts of the graphics pipeline creation
-- Integration wit ImGui
+- Integration wit [ImGui](https://github.com/ocornut/imgui.git)
+- Use of subpasses
+- Use of secondary command buffers
 
 ## Experiments
 
@@ -14,7 +16,7 @@ Major differences include:
 Loads and displays a Wavefront OBJ model. Only supports 1 material per model.
 This is essentially a fresh re-implementation of the Vulkan Tutorial to test the framework.
 
-# ![viewer](/pics/model_viewer_placeholder.png)
+# ![viewer](/pics/model_viewer.png)
 
 ## Dependencies
 
