@@ -39,3 +39,5 @@ A discrete GPU is likely required. To simplify the code a bit a few assumptions 
 
 Tested with:
 - Windows 10 + Visual Studio 2019
+- Ubuntu 20.04 + gcc 9.3.0
+
