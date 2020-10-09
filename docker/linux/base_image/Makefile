@@ -8,8 +8,8 @@ publish:
 	docker push ${TAG}
 
 run-shell:
-	docker run -it -
-		--rm 
+	docker run -it \
+		--rm \
 		--entrypoint bash \
 		--net=host \
-		${TAG} 
+		${TAG}

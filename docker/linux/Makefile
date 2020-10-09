@@ -6,18 +6,24 @@ build:
 	cd ../../out; \
 		cmake -G "Unix Makefiles" ..; \
 		make -j4
-	tar -zcvf model_viewer.tar.gz ../../out/apps/model_viewer
+	tar -C ../../out/apps -zcvf model_viewer.tar.gz model_viewer
 
 package:
-	docker build --tag ${TAG} - < Dockerfile
+	docker build --tag ${TAG} -f Dockerfile .
 
 publish:
 	docker push ${TAG}
 
 run-model-viewer:
 	docker run -it --runtime=nvidia --rm \
-	  	--entrypoint bash \
+	  	--entrypoint /opt/vulkan/model_viewer/model_viewer \
 		--net=host \
 		-v /tmp/.X11-unix:/tmp/.X11-unix  -e DISPLAY=${DISPLAY}  \
-		${TAG} \
-	    "/opt/vulkan/model_viewer/model_viewer"
+		${TAG}
+
+run-shell:
+	docker run -it --rm \
+		--entrypoint bash \
+		--net=host \
+		${TAG}
+
