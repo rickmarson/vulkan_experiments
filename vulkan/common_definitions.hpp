@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 #include <string>
+#include <cstring>  // for memcpy in gcc
 #include <functional>
 #include <memory>
 #include <iostream>

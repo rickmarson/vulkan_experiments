@@ -9,7 +9,7 @@ file(GLOB TUTORIAL_SRCS "model_viewer.cpp")
 add_executable(model_viewer ${TUTORIAL_SRCS} ${TUTORIAL_HDRS})
 add_dependencies(model_viewer glfw tinyobjloader imgui vulkan shaders)
 
-target_link_libraries(model_viewer ${Vulkan_LIBRARIES} glfw tinyobjloader imgui vulkan)
+target_link_libraries(model_viewer ${Vulkan_LIBRARIES} vulkan glfw tinyobjloader imgui)
 
 file(GLOB SHADERS "${CMAKE_SOURCE_DIR}/shaders/model_viewer_vs.spv"
                   "${CMAKE_SOURCE_DIR}/shaders/model_viewer_fs.spv")

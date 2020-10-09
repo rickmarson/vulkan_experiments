@@ -1,6 +1,6 @@
 #!/bin/sh
 
-ROOT_PATH = $1
+ROOT_PATH="$1"
 
 glslc $ROOT_PATH/shaders/imgui.vert -o $ROOT_PATH/shaders/imgui_vs.spv
 glslc $ROOT_PATH/shaders/imgui.frag -o $ROOT_PATH/shaders/imgui_fs.spv
