@@ -148,7 +148,7 @@ void ModelViewer::updateScene() {
 	auto final_angle_z = rot_angle_z_;
 
 	if (turntable_on_) {
-		auto current_time = std::chrono::high_resolution_clock::now();
+		auto current_time = std::chrono::steady_clock::now();
 		float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - animation_start_time_).count();
 		final_angle_z *= glm::radians(90.0f * time);
 	}
