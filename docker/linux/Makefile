@@ -10,15 +10,29 @@ build:
 
 package:
 	docker build --tag ${TAG} -f Dockerfile .
+	rm model_viewer.tar.gz
 
 publish:
 	docker push ${TAG}
 
+run-vulkaninfo:
+	docker run -it --runtime=nvidia --rm \
+	  	--entrypoint=vulkaninfo \
+		--net=host \
+		-v /usr/share/vulkan:/usr/share/vulkan \
+		-v /tmp/.X11-unix:/tmp/.X11-unix \
+		-e DISPLAY=${DISPLAY}  \
+		--privileged \
+		${TAG}
+
 run-model-viewer:
 	docker run -it --runtime=nvidia --rm \
-	  	--entrypoint /opt/vulkan/model_viewer/model_viewer \
+	  	--entrypoint=/opt/vulkan/model_viewer/model_viewer \
 		--net=host \
-		-v /tmp/.X11-unix:/tmp/.X11-unix  -e DISPLAY=${DISPLAY}  \
+		-v /usr/share/vulkan:/usr/share/vulkan \
+		-v /tmp/.X11-unix:/tmp/.X11-unix \
+		-e DISPLAY=${DISPLAY}  \
+		--privileged \
 		${TAG}
 
 run-shell:
