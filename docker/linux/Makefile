@@ -33,7 +33,8 @@ run-vulkaninfo:
 
 run-model-viewer:
 	docker run -it --runtime=nvidia --rm \
-	  	--entrypoint=/opt/vulkan/model_viewer/model_viewer \
+		--workdir="/opt/vulkan/model_viewer" \
+	  	--entrypoint="./model_viewer" \
 		--net=host \
 		-v /usr/share/vulkan:/usr/share/vulkan \
 		-v /tmp/.X11-unix:/tmp/.X11-unix \

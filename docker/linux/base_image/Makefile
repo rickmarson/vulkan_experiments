@@ -18,3 +18,24 @@ run-shell:
 		--entrypoint bash \
 		--net=host \
 		${TAG}
+
+run-vulkaninfo:
+	docker run -it --runtime=nvidia --rm \
+	  	--entrypoint=vulkaninfo \
+		--net=host \
+		-v /usr/share/vulkan:/usr/share/vulkan \
+		-v /tmp/.X11-unix:/tmp/.X11-unix \
+		-e DISPLAY=${DISPLAY}  \
+		--privileged \
+		${TAG}
+
+run-dev-env:
+	docker run -it --runtime=nvidia --rm \
+	  	--entrypoint=bash \
+		--net=host \
+		-v /usr/share/vulkan:/usr/share/vulkan \
+		-v /tmp/.X11-unix:/tmp/.X11-unix \
+		-v ~/repos:/home/vulkan/repos \
+		-e DISPLAY=${DISPLAY}  \
+		--privileged \
+		${TAG}

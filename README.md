@@ -38,6 +38,22 @@ This is essentially a fresh re-implementation of the Vulkan Tutorial to test the
 A discrete GPU is likely required. To simplify the code a bit a few assumptions have been made on the support and/or availability of device features. 
 
 Tested with:
+- Vulkan 1.2.148
 - Windows 10 + Visual Studio 2019
 - Ubuntu 20.04 + gcc 9.3.0
 
+## Docker
+
+A Docker image that can be used as development environment is provided for Ubuntu 20.04 and NVidia GPUs:
+
+```bash
+docker pull nevil82/vulkan_experiments:vulkan_base_ubuntu20.04
+```
+
+There's also an additional image packaging the examples executables:
+
+```bash
+docker pull nevil82/vulkan_experiments:1.0.0
+```
+
+Look in `docker/linux` for Dockerfile(s) and rules to build and run.  
