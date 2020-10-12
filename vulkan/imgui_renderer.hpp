@@ -25,6 +25,8 @@ public:
 	bool setUp(GLFWWindowHandle window);
 	void shutDown();
 
+	float getHighDpiScale() const { return high_dpi_scale_; }
+
 	bool createGraphicsPipeline(RenderPass& render_pass, uint32_t subpass_number);
 	void cleanupGraphicsPipeline();
 
@@ -39,14 +41,16 @@ private:
 
 	void createDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
 	void updateDescriptorSets(const DescriptorSetMetadata& metadata);
-	void createOrResizeBuffers();
+	void createBuffers();
 	void updateBuffers();
+
+	float high_dpi_scale_ = 1.0f;
 
 	VulkanBackend* vulkan_backend_ = nullptr;
 	Buffer vertex_buffer_;
 	Buffer index_buffer_;
-	uint32_t vertex_count_ = 0;
-	uint32_t index_count_ = 0;
+	uint32_t max_vertex_count_ = 0;
+	uint32_t max_index_count_ = 0;
 	
 	std::shared_ptr<ShaderModule> imgui_vertex_shader_;
 	std::shared_ptr<ShaderModule> imgui_fragment_shader_;

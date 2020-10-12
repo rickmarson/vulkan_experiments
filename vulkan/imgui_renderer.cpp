@@ -17,6 +17,8 @@
 #include <GLFW/glfw3native.h>   // for glfwGetWin32Window
 #endif
 
+#include <algorithm>
+
 
 // Internal functions
 
@@ -251,7 +253,7 @@ void ImGuiRenderer::endFrame() {
         return;
     }
 
-    createOrResizeBuffers();
+    createBuffers();
     updateBuffers();
 }
 
@@ -422,6 +424,12 @@ void ImGuiRenderer::InitImGui(GLFWWindowHandle window) {
     io.ImeWindowHandle = (void*)glfwGetWin32Window(glfw_interface.glfw_window);
 #endif
 
+    // scale up for high-dpi screens
+    float x_scale, y_scale;
+    glfwGetWindowContentScale(glfw_interface.glfw_window, &x_scale, &y_scale);
+    high_dpi_scale_ = x_scale > y_scale ? x_scale : y_scale;
+    io.FontGlobalScale *= high_dpi_scale_;
+
     // Create mouse cursors
     // (By design, on X11 cursors are user configurable and some cursors may be missing. When a cursor doesn't exist,
     // GLFW will emit an error which will often be printed by the app, so we temporarily disable error reporting.
@@ -525,30 +533,22 @@ void ImGuiRenderer::updateDescriptorSets(const DescriptorSetMetadata& metadata) 
     fonts_texture_->updateDescriptorSets(vk_descriptor_sets_, bindings.find(UI_TEXTURE_SAMPLER_BINDING_NAME)->second);
 }
 
-void ImGuiRenderer::createOrResizeBuffers() {
+void ImGuiRenderer::createBuffers() {
     ImDrawData* draw_data = ImGui::GetDrawData();
     if (draw_data->TotalVtxCount <= 0) {
         std::cerr << "[IMGUI Renderer] Call to ImGuiRenderer::createBuffers with empty Draw Data!" << std::endl;
         return;
     }
 
-    if (vertex_count_ < draw_data->TotalVtxCount) {
-        if (vertex_buffer_.vk_buffer != VK_NULL_HANDLE) {
-            vulkan_backend_->destroyBuffer(vertex_buffer_);
-        }
-
-        vertex_count_ = draw_data->TotalVtxCount;
-        auto empty_vertex_buffer = std::vector<ImDrawVert>(vertex_count_, ImDrawVert());
+    if (vertex_buffer_.vk_buffer == VK_NULL_HANDLE) {
+        max_vertex_count_ = draw_data->TotalVtxCount * 5; // leave enough room for 
+        auto empty_vertex_buffer = std::vector<ImDrawVert>(max_vertex_count_, ImDrawVert());
         vertex_buffer_ = vulkan_backend_->createVertexBuffer<ImDrawVert>("imgui_vertex_buffer", empty_vertex_buffer, false);
     }
 
-    if (index_count_ < draw_data->TotalIdxCount) {
-        if (index_buffer_.vk_buffer != VK_NULL_HANDLE) {
-            vulkan_backend_->destroyBuffer(index_buffer_);
-        }
-
-        index_count_ = draw_data->TotalIdxCount;
-        auto empty_index_buffer = std::vector<ImDrawIdx>(index_count_, ImDrawIdx());
+    if (index_buffer_.vk_buffer == VK_NULL_HANDLE) {
+        max_index_count_ = draw_data->TotalIdxCount * 5;
+        auto empty_index_buffer = std::vector<ImDrawIdx>(max_index_count_, ImDrawIdx());
         index_buffer_ = vulkan_backend_->createIndexBuffer<ImDrawIdx>("imgui_index_buffer", empty_index_buffer, false);
     }
 }

@@ -40,6 +40,13 @@ private:
 	std::unique_ptr<SceneManager> scene_manager_;
 	RenderPass render_pass_;
 	GraphicsPipeline graphics_pipeline_;
+
+	// options
+	bool turntable_on_ = false;
+	std::chrono::time_point<std::chrono::steady_clock> animation_start_time_;
+	float rot_angle_x_ = 0.0f;
+	float rot_angle_y_ = 0.0f;
+	float rot_angle_z_ = 45.0f;
 };
 
 // Implementation
@@ -134,18 +141,24 @@ void ModelViewer::cleanup() {
 }
 
 void ModelViewer::updateScene() {
-	static auto start_time = std::chrono::high_resolution_clock::now();
-
-	auto current_time = std::chrono::high_resolution_clock::now();
-	float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
-
 	scene_manager_->update();
 
 	auto& mesh = meshes_["viking_room"];
 
-	mesh->setTransform(
-		glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f))
-	);
+	auto final_angle_z = rot_angle_z_;
+
+	if (turntable_on_) {
+		auto current_time = std::chrono::high_resolution_clock::now();
+		float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - animation_start_time_).count();
+		final_angle_z *= glm::radians(90.0f * time);
+	}
+
+	auto rotation_matrix = 
+		glm::rotate(glm::mat4(1.0f), glm::radians(final_angle_z), glm::vec3(0.0f, 0.0f, 1.0f)) *
+		glm::rotate(glm::mat4(1.0f), glm::radians(rot_angle_y_), glm::vec3(0.0f, 1.0f, 0.0f)) *
+		glm::rotate(glm::mat4(1.0f), glm::radians(rot_angle_x_), glm::vec3(1.0f, 0.0f, 0.0f));
+	
+	mesh->setTransform(rotation_matrix);
 
 	mesh->update();
 
@@ -248,23 +261,43 @@ RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
 void ModelViewer::drawUi() {
 	imgui_renderer_->beginFrame();
 
-	static ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-	static float f = 0.0f;
-	static int counter = 0;
+	static char turn_table_label[] = "Toggle Turn Table";
+	static char reset_button_label[] = "Reset";
 
-	ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
+	ImGui::SetNextWindowPos(ImVec2(10, 10));
 
-	ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
+	const auto high_dpi_scale = imgui_renderer_->getHighDpiScale();
+	ImGui::SetNextWindowSize(ImVec2(270 * high_dpi_scale, 220 * high_dpi_scale));
 
-	ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-	ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
+	ImGui::Begin("Options");                   
 
-	if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-		counter++;
-	ImGui::SameLine();
-	ImGui::Text("counter = %d", counter);
+	if (ImGui::Checkbox(turn_table_label, &turntable_on_)) {
+		if (turntable_on_) {
+			animation_start_time_ = std::chrono::steady_clock::now();
+		}
+	}
 
-	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+	ImGui::SliderFloat("X Rotation", &rot_angle_x_, -90.0f, 90.0f); 
+	ImGui::SliderFloat("Y Rotation", &rot_angle_y_, -90.0f, 90.0f);
+	ImGui::SliderFloat("Z Rotation", &rot_angle_z_, -180.0f, 180.0f);
+	
+	if (ImGui::Button(reset_button_label)) {
+		rot_angle_x_ = 0.0f;
+		rot_angle_y_ = 0.0f;
+		rot_angle_z_ = 45.0f;
+		turntable_on_ = false;
+	}
+
+	ImGui::NewLine();
+	ImGui::Separator();
+	ImGui::NewLine();
+
+	ImGui::Text("Stats:");
+	ImGui::NewLine();
+
+	ImGui::Text("Frame time: %.3f ms/frame", 1000.0f / ImGui::GetIO().Framerate);
+	ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+
 	ImGui::End();
 
 	imgui_renderer_->endFrame();

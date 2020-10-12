@@ -4,11 +4,17 @@ TAG=nevil82/vulkan_experiments:${VERSION}
 build:
 	mkdir -p ../../out
 	cd ../../out; \
-		cmake -G "Unix Makefiles" ..; \
+		cmake -DCMAKE_BUILD_TYPE=Release -G "Unix Makefiles" ..; \
 		make -j4
-	tar -C ../../out/apps -zcvf model_viewer.tar.gz model_viewer
+
+build-debug:
+	mkdir -p ../../out
+	cd ../../out; \
+		cmake -DCMAKE_BUILD_TYPE=Debug -G "Unix Makefiles" ..; \
+		make -j4
 
 package:
+	tar -C ../../out/apps -zcvf model_viewer.tar.gz model_viewer
 	docker build --tag ${TAG} -f Dockerfile .
 	rm model_viewer.tar.gz
 

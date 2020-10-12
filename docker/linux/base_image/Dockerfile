@@ -23,10 +23,10 @@ RUN apt-get update \
       libxi-dev \
       vulkan-sdk
 
-COPY libvulkan_intel.so /usr/lib/x86_64-linux-gnu/libvulkan_intel.so
-COPY libvulkan_radeon.so /usr/lib/x86_64-linux-gnu/libvulkan_radeon.so
-COPY libvulkan_intel.so /usr/lib/i386-linux-gnu/libvulkan_intel.so
-COPY libvulkan_radeon.so /usr/lib/i386-linux-gnu/libvulkan_radeon.so
+COPY libvulkan_intel.so.x64 /usr/lib/x86_64-linux-gnu/libvulkan_intel.so
+COPY libvulkan_radeon.so.x64 /usr/lib/x86_64-linux-gnu/libvulkan_radeon.so
+COPY libvulkan_intel.so.x86 /usr/lib/i386-linux-gnu/libvulkan_intel.so
+COPY libvulkan_radeon.so.x86 /usr/lib/i386-linux-gnu/libvulkan_radeon.so
 
 RUN useradd -m vulkan && echo "vulkan:vulkan" | chpasswd && adduser vulkan sudo
 RUN echo "vulkan ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
