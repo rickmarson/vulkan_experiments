@@ -89,6 +89,10 @@ bool ModelViewer::loadAssets() {
 	imgui_renderer_ = ImGuiRenderer::create(&vulkan_backend_);
 	imgui_renderer_->setUp(window_);
 
+#ifndef NDEBUG
+	vulkan_backend_.enableTimestampQueries(2);
+#endif
+
 	return true;
 }
 
@@ -207,6 +211,8 @@ RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
 		return makeRecordCommandsResult(false, command_buffers);
 	}
 
+	vulkan_backend_.resetTimestampQueries(command_buffers[0]);
+
 	VkRenderPassBeginInfo render_pass_info{};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	render_pass_info.renderPass = render_pass_.vk_render_pass;
@@ -236,7 +242,11 @@ RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
 	vkCmdBindIndexBuffer(command_buffers[0], mesh->getIndexBuffer().vk_buffer, 0, VK_INDEX_TYPE_UINT32);
 	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, MODEL_UNIFORM_SET_ID, 1, &mesh_descriptors[swapchain_image], 0, nullptr);
 
+	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0); // does nothing if not in debug
+
 	vkCmdDrawIndexed(command_buffers[0], mesh->getIndexCount(), 1, 0, 0, 0);
+
+	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 1); // does nothing if not in debug
 
 	// register UI overlay commands
 	vkCmdNextSubpass(command_buffers[0], VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
@@ -259,6 +269,13 @@ RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
 }
 
 void ModelViewer::drawUi() {
+	static auto time_to_draw_geometry = 0.0f;
+	
+	auto vulkan_stats = vulkan_backend_.retrieveTimestampQueries();
+	if (!vulkan_stats.empty()) {
+		time_to_draw_geometry = vulkan_stats[1] - vulkan_stats[0];
+	}
+
 	imgui_renderer_->beginFrame();
 
 	static char turn_table_label[] = "Toggle Turn Table";
@@ -297,7 +314,8 @@ void ModelViewer::drawUi() {
 
 	ImGui::Text("Frame time: %.3f ms/frame", 1000.0f / ImGui::GetIO().Framerate);
 	ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-
+	ImGui::Text("Geom. draw time: %.4f ms", time_to_draw_geometry);
+	
 	ImGui::End();
 
 	imgui_renderer_->endFrame();

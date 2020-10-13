@@ -11,6 +11,7 @@
 
 #include <optional>
 #include <algorithm>
+#include <thread>
 
 // Additional Helper Functions
 
@@ -270,6 +271,10 @@ void VulkanBackend::shutDown() {
         vkDestroySemaphore(device_, render_finished_semaphores_[i], nullptr);
         vkDestroySemaphore(device_, image_available_semaphores_[i], nullptr);
         vkDestroyFence(device_, in_flight_fences_[i], nullptr);
+    }
+
+    if (timestampQueriesEnabled()) {
+        vkDestroyQueryPool(device_, timestamp_queries_pool_, nullptr);
     }
 
     vkDestroyCommandPool(device_, command_pool_, nullptr);
@@ -857,6 +862,65 @@ void VulkanBackend::endSingleTimeCommands(VkCommandBuffer command_buffer) {
     vkFreeCommandBuffers(device_, command_pool_, 1, &command_buffer);
 }
 
+bool VulkanBackend::enableTimestampQueries(uint32_t queries_count) {
+    VkPhysicalDeviceProperties device_properties;
+    vkGetPhysicalDeviceProperties(physical_device_, &device_properties);
+    if (!device_properties.limits.timestampComputeAndGraphics) {
+        std::cerr << device_properties.deviceName << " does not support timestamps." << std::endl;
+        return false;
+    }
+
+    VkQueryPoolCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+    info.pNext = nullptr;
+    info.flags = 0;
+    info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    info.queryCount = queries_count;
+    info.pipelineStatistics = 0;
+
+    VkResult result = vkCreateQueryPool(device_, &info, nullptr, &timestamp_queries_pool_);
+    if (result != VK_SUCCESS) {
+        std::cerr << "Failed to create Timestamp Query Pool!" << std::endl;
+        return false;
+    }
+
+    timestamp_queries_ = queries_count;
+    timestamp_period_ = device_properties.limits.timestampPeriod;
+
+    return true;
+}
+
+void VulkanBackend::writeTimestampQuery(VkCommandBuffer& command_buffer, VkPipelineStageFlagBits stage, uint32_t query_num) {
+    if (timestampQueriesEnabled()) {
+        vkCmdWriteTimestamp(command_buffer, stage, timestamp_queries_pool_, query_num);
+    }
+}
+
+std::vector<float> VulkanBackend::retrieveTimestampQueries(bool should_wait, int max_tries) {
+    if (!timestampQueriesEnabled()) {
+        return std::vector<float>();
+    }
+
+    auto result_ms = tryRetrieveTimestampQueries();
+
+    auto counter = 0;
+    if (should_wait && result_ms.empty()) {
+        while (result_ms.empty() && counter < max_tries) {
+            result_ms = tryRetrieveTimestampQueries();
+            std::this_thread::sleep_for(std::chrono::microseconds(5));
+            ++counter;
+        }
+    }
+    
+    return result_ms;
+}
+
+void VulkanBackend::resetTimestampQueries(VkCommandBuffer& command_buffer) {
+    if (timestampQueriesEnabled()) {
+        vkCmdResetQueryPool(command_buffer, timestamp_queries_pool_, 0, timestamp_queries_);
+    }
+}
+
 bool VulkanBackend::initVulkan() {
     if (!selectDevice()) {
         return false;
@@ -906,7 +970,7 @@ bool VulkanBackend::selectDevice() {
     VkPhysicalDeviceProperties device_properties;
     vkGetPhysicalDeviceProperties(physical_device_, &device_properties);
     std::cout << "Selected Device: " << device_properties.deviceName << std::endl;
-
+    
     return true;
 }
 
@@ -928,8 +992,11 @@ bool VulkanBackend::isDeviceSuitable(VkPhysicalDevice device) {
     }
 
     return device_properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
-        device_features.geometryShader && indices.isValid() && extensions_supported && swap_chain_adequate
-        && device_features.samplerAnisotropy;
+        device_features.geometryShader && 
+        device_features.samplerAnisotropy &&
+        indices.isValid() && 
+        extensions_supported && 
+        swap_chain_adequate;
 }
 
 bool VulkanBackend::createLogicalDevice() {
@@ -1252,4 +1319,28 @@ VkImageView VulkanBackend::createImageView(VkImage image, VkFormat format, VkIma
     }
 
     return image_view;
+}
+
+std::vector<float> VulkanBackend::tryRetrieveTimestampQueries() {
+    VkDeviceSize stride = 2 * sizeof(uint32_t); // query + availability
+    size_t result_size = timestamp_queries_ * stride;
+    std::vector<uint32_t> result(2 * static_cast<size_t>(timestamp_queries_));
+
+    vkGetQueryPoolResults(device_, timestamp_queries_pool_, 0, timestamp_queries_, result_size, static_cast<void*>(result.data()), stride, VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+
+    std::vector<float> result_ms;
+    for (size_t q = 0; q < result.size(); q = q+2) {
+        auto value = result[q];
+        auto available = result[q + 1];
+        if (available > 0) {
+            result_ms.push_back(value * timestamp_period_ * 1e-6);  // nanoseconds -> milliseconds
+        }
+    }
+
+    if (result_ms.size() != timestamp_queries_) {
+        // not all queries are available
+        result_ms.clear();
+    }
+
+    return result_ms;
 }

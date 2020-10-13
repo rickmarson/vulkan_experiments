@@ -103,6 +103,12 @@ public:
     VkCommandBuffer beginSingleTimeCommands();
     void endSingleTimeCommands(VkCommandBuffer command_buffer);
 
+    bool enableTimestampQueries(uint32_t queries_count);
+    bool timestampQueriesEnabled() const { return timestamp_queries_pool_ != VK_NULL_HANDLE && timestamp_queries_ > 0; }
+    void writeTimestampQuery(VkCommandBuffer& command_buffer, VkPipelineStageFlagBits stage, uint32_t query_num);
+    std::vector<float> retrieveTimestampQueries(bool should_wait = false, int max_tries = 100);
+    void resetTimestampQueries(VkCommandBuffer& command_buffer);
+
 private:
     friend class Texture;
 
@@ -130,6 +136,7 @@ private:
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, uint32_t mip_levels = 1);
 
     VkPhysicalDevice getPhysicalDevice() const { return physical_device_; }
+    std::vector<float> tryRetrieveTimestampQueries();
 
     const uint32_t max_frames_in_flight_ = 2;
     size_t current_frame_ = 0;
@@ -150,6 +157,10 @@ private:
     VkSampleCountFlagBits max_msaa_samples_ = VK_SAMPLE_COUNT_1_BIT;
     VkCommandPool command_pool_ = VK_NULL_HANDLE;  // one for every queue
     VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;
+    VkQueryPool timestamp_queries_pool_ = VK_NULL_HANDLE;
+    uint32_t timestamp_queries_ = 0;
+    float timestamp_period_ = 1.f;
+
     std::vector<VkSemaphore> image_available_semaphores_;
     std::vector<VkSemaphore> render_finished_semaphores_;
     std::vector<VkFence> in_flight_fences_;
