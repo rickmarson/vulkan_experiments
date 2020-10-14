@@ -15,10 +15,10 @@
 
 // Declarations
 
-class ModelViewer : public VulkanApp {
+class RainyAlley : public VulkanApp {
 public:
-	ModelViewer() {
-		setWindowTitle("Model Viewer");
+	RainyAlley() {
+		setWindowTitle("Rainy Alley");
 	}
 
 private:
@@ -42,49 +42,15 @@ private:
 	Pipeline graphics_pipeline_;
 
 	// options
-	bool turntable_on_ = false;
-	std::chrono::time_point<std::chrono::steady_clock> animation_start_time_;
-	float rot_angle_x_ = 0.0f;
-	float rot_angle_y_ = 0.0f;
-	float rot_angle_z_ = 45.0f;
+	
 };
 
 // Implementation
 
-bool ModelViewer::loadAssets() {
+bool RainyAlley::loadAssets() {
 	main_command_buffers_ = vulkan_backend_.createPrimaryCommandBuffers(vulkan_backend_.getSwapChainSize());
 
-	auto vertex_shader = vulkan_backend_.createShaderModule("vertex");
-	vertex_shader->loadSpirvShader("shaders/model_viewer_vs.spv");
-
-	if (!vertex_shader->isVertexFormatCompatible(Vertex::getFormatInfo())) {
-		std::cerr << "Requested Vertex format is not compatible with pipeline input!" << std::endl;
-		return false;
-	}
-
-	auto fragment_shader = vulkan_backend_.createShaderModule("fragment");
-	fragment_shader->loadSpirvShader("shaders/model_viewer_fs.spv");
-	
-	if (!vertex_shader->isValid() || !fragment_shader->isValid()) {
-		std::cerr << "Failed to validate shaders!" << std::endl;
-		return false;
-	}
-
-	shaders_[vertex_shader->getName()] = std::move(vertex_shader);
-	shaders_[fragment_shader->getName()] = std::move(fragment_shader);
-
-	auto mesh = vulkan_backend_.createMesh("viking_room");
-	if (!mesh->loadObjModel("meshes/viking_room.obj")) {
-		return false;
-	}
-
-	meshes_[mesh->getName()] = std::move(mesh);
-
-	auto extent = vulkan_backend_.getSwapChainExtent();
-	scene_manager_ = SceneManager::create(&vulkan_backend_);
-	scene_manager_->setCameraProperties(45.0f, extent.width / (float)extent.height, 0.1f, 10.0f);
-	scene_manager_->setCameraPosition(glm::vec3(0.0f, 0.0f, 0.0f));
-	scene_manager_->setCameraTarget(glm::vec3(2.0f, 2.0f, 2.0f));
+	// TODO
 
 	imgui_renderer_ = ImGuiRenderer::create(&vulkan_backend_);
 	imgui_renderer_->setUp(window_);
@@ -96,7 +62,7 @@ bool ModelViewer::loadAssets() {
 	return true;
 }
 
-bool ModelViewer::setupScene() {
+bool RainyAlley::setupScene() {
 	vulkan_backend_.createDescriptorPool(2, 2);
 
 	RenderPassConfig render_pass_config;
@@ -123,7 +89,7 @@ bool ModelViewer::setupScene() {
 	return true;
 }
 
-void ModelViewer::cleanupSwapChainAssets() {
+void RainyAlley::cleanupSwapChainAssets() {
 	imgui_renderer_->cleanupGraphicsPipeline();
 
 	scene_manager_->deleteUniformBuffer();
@@ -136,7 +102,7 @@ void ModelViewer::cleanupSwapChainAssets() {
 	vulkan_backend_.destroyPipeline(graphics_pipeline_);
 }
 
-void ModelViewer::cleanup() {
+void RainyAlley::cleanup() {
 	cleanupSwapChainAssets();
 	imgui_renderer_->shutDown();
 	vulkan_backend_.freeCommandBuffers(main_command_buffers_);
@@ -144,33 +110,16 @@ void ModelViewer::cleanup() {
 	shaders_.clear();
 }
 
-void ModelViewer::updateScene() {
+void RainyAlley::updateScene() {
 	scene_manager_->update();
 
-	auto& mesh = meshes_["viking_room"];
-
-	auto final_angle_z = rot_angle_z_;
-
-	if (turntable_on_) {
-		auto current_time = std::chrono::steady_clock::now();
-		float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - animation_start_time_).count();
-		final_angle_z *= glm::radians(90.0f * time);
-	}
-
-	auto rotation_matrix = 
-		glm::rotate(glm::mat4(1.0f), glm::radians(final_angle_z), glm::vec3(0.0f, 0.0f, 1.0f)) *
-		glm::rotate(glm::mat4(1.0f), glm::radians(rot_angle_y_), glm::vec3(0.0f, 1.0f, 0.0f)) *
-		glm::rotate(glm::mat4(1.0f), glm::radians(rot_angle_x_), glm::vec3(1.0f, 0.0f, 0.0f));
-	
-	mesh->setTransform(rotation_matrix);
-
-	mesh->update();
+	// TODO
 
 	drawUi();
 }
 
-bool ModelViewer::createGraphicsPipeline() {
-	GraphicsPipelineConfig config;
+bool RainyAlley::createGraphicsPipeline() {
+	/*GraphicsPipelineConfig config;
 	config.name = "Solid Geometry";
 	config.vertex = shaders_["vertex"];
 	config.fragment = shaders_["fragment"];
@@ -191,10 +140,11 @@ bool ModelViewer::createGraphicsPipeline() {
 	mesh->createDescriptorSets(graphics_pipeline_.vk_descriptor_set_layouts);
 	mesh->updateDescriptorSets(graphics_pipeline_.descriptor_metadata);
 
-	return graphics_pipeline_.vk_pipeline != VK_NULL_HANDLE;
+	return graphics_pipeline_.vk_pipeline != VK_NULL_HANDLE;*/
+	return true;
 }
 
-RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
+RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
 	auto& main_command_buffer = main_command_buffers_[swapchain_image];
 
 	// we might need to combine multiple command buffers in one frame in the future
@@ -268,53 +218,12 @@ RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
 	return makeRecordCommandsResult(true, command_buffers);
 }
 
-void ModelViewer::drawUi() {
-	static auto time_to_draw_geometry = 0.0f;
-	
-	auto vulkan_stats = vulkan_backend_.retrieveTimestampQueries();
-	if (!vulkan_stats.empty()) {
-		time_to_draw_geometry = vulkan_stats[1] - vulkan_stats[0];
-	}
+void RainyAlley::drawUi() {
 
 	imgui_renderer_->beginFrame();
 
-	static char turn_table_label[] = "Toggle Turn Table";
-	static char reset_button_label[] = "Reset";
-
-	ImGui::SetNextWindowPos(ImVec2(10, 10));
-
-	const auto high_dpi_scale = imgui_renderer_->getHighDpiScale();
-	ImGui::SetNextWindowSize(ImVec2(270 * high_dpi_scale, 220 * high_dpi_scale));
-
 	ImGui::Begin("Options");                   
 
-	if (ImGui::Checkbox(turn_table_label, &turntable_on_)) {
-		if (turntable_on_) {
-			animation_start_time_ = std::chrono::steady_clock::now();
-		}
-	}
-
-	ImGui::SliderFloat("X Rotation", &rot_angle_x_, -90.0f, 90.0f); 
-	ImGui::SliderFloat("Y Rotation", &rot_angle_y_, -90.0f, 90.0f);
-	ImGui::SliderFloat("Z Rotation", &rot_angle_z_, -180.0f, 180.0f);
-	
-	if (ImGui::Button(reset_button_label)) {
-		rot_angle_x_ = 0.0f;
-		rot_angle_y_ = 0.0f;
-		rot_angle_z_ = 45.0f;
-		turntable_on_ = false;
-	}
-
-	ImGui::NewLine();
-	ImGui::Separator();
-	ImGui::NewLine();
-
-	ImGui::Text("Stats:");
-	ImGui::NewLine();
-
-	ImGui::Text("Frame time: %.3f ms/frame", 1000.0f / ImGui::GetIO().Framerate);
-	ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-	ImGui::Text("Geom. draw time: %.4f ms", time_to_draw_geometry);
 	
 	ImGui::End();
 
@@ -324,7 +233,7 @@ void ModelViewer::drawUi() {
 // Entry point
 
 int main(int argc, char** argv) {
-	ModelViewer app;
+	RainyAlley app;
 	if (!app.setup()) {
 		return -1;
 	}

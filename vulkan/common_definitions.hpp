@@ -73,11 +73,13 @@ struct DescriptorSetMetadata {
 
 using PushConstantsMap = std::map<std::string, VkPushConstantRange>;
 
-struct GraphicsPipeline {
+enum class PipelineType { UNKNOWN = -1, GRAPHICS, COMPUTE };
+struct Pipeline {
     std::string name;
+    PipelineType type = PipelineType::UNKNOWN;
 
     VkPipelineLayout vk_pipeline_layout = VK_NULL_HANDLE;
-    VkPipeline vk_graphics_pipeline = VK_NULL_HANDLE;
+    VkPipeline vk_pipeline = VK_NULL_HANDLE;
     std::map<uint32_t, VkDescriptorSetLayout> vk_descriptor_set_layouts;
 
     DescriptorSetMetadata descriptor_metadata;

@@ -24,8 +24,14 @@ struct GraphicsPipelineConfig {
     std::string name;
     // shaders
     std::shared_ptr<ShaderModule> vertex;
-    std::shared_ptr<ShaderModule> fragment = nullptr;
-    // TODO: add tessellation and geometry
+    std::shared_ptr<ShaderModule> geometry;
+    std::shared_ptr<ShaderModule> fragment;
+    struct TessellationShaders {
+        std::shared_ptr<ShaderModule> control;
+        std::shared_ptr<ShaderModule> evaluation;
+
+        operator bool() const { return control && evaluation; }
+    }tessellation;
     // vertex buffer desc
     VkVertexInputBindingDescription vertex_buffer_binding_desc;
     std::vector<VkVertexInputAttributeDescription> vertex_buffer_attrib_desc;
@@ -39,6 +45,11 @@ struct GraphicsPipelineConfig {
 
     RenderPass render_pass;
     uint32_t subpass_number = 0;
+};
+
+struct ComputePipelineConfig {
+    std::string name;
+    std::shared_ptr<ShaderModule> compute;
 };
 
 // VulkanBackend
@@ -69,14 +80,15 @@ public:
     std::shared_ptr<Texture> createTexture(const std::string& name);
     std::shared_ptr<Mesh> createMesh(const std::string& name);
 
+    bool createDescriptorPool(uint32_t buffer_count, uint32_t sampler_count, uint32_t max_sets = 0);
     std::vector<VkCommandBuffer> createPrimaryCommandBuffers(uint32_t count) const; // the caller is responsible for managing these
     std::vector<VkCommandBuffer> createSecondaryCommandBuffers(uint32_t count) const; // the caller is responsible for managing these
     void resetCommandBuffers(std::vector<VkCommandBuffer>& cmd_buffers) const;
     void freeCommandBuffers(std::vector<VkCommandBuffer>& cmd_buffers) const;
 
     RenderPass createRenderPass(const RenderPassConfig& config);
-    GraphicsPipeline createGraphicsPipeline(const GraphicsPipelineConfig& config);
-    bool createDescriptorPool(uint32_t buffer_count, uint32_t sampler_count, uint32_t max_sets = 0);
+    Pipeline createGraphicsPipeline(const GraphicsPipelineConfig& config);
+    Pipeline createComputePipeline(const ComputePipelineConfig& config);
 
     template<typename DataType>
     Buffer createVertexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool static_buffer = true);
@@ -94,7 +106,7 @@ public:
 
     void destroyBuffer(Buffer& buffer);
     void destroyRenderPass(RenderPass& render_pass);
-    void destroyGraphicsPipeline(GraphicsPipeline& graphics_pipeline);
+    void destroyPipeline(Pipeline& graphics_pipeline);
     void destroyUniformBuffer(UniformBuffer& uniform_buffer);
     
     VkResult startNextFrame(uint32_t& next_swapchain_image, bool window_resized);
@@ -111,6 +123,14 @@ public:
 
 private:
     friend class Texture;
+
+    struct GraphicsPipelineLayoutInfo {
+        std::map<uint32_t, VkDescriptorSetLayout> descriptors_set_layouts;
+        std::vector<VkDescriptorSetLayout> descriptors_set_layouts_aux;  // contiguous memory block for passing to vulkan 
+        std::vector<VkPushConstantRange> push_constants_array;
+        DescriptorSetMetadata pipeline_descriptor_metadata;
+        PushConstantsMap push_constants_map;
+    };
 
     bool initVulkan();
     
@@ -134,6 +154,7 @@ private:
     VkDeviceMemory allocateDeviceMemory(VkMemoryRequirements mem_reqs, VkMemoryPropertyFlags properties);
     void copyBufferToGpuLocalMemory(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, uint32_t mip_levels = 1);
+    bool assembleGraphicsPipelineLayoutInfo(const GraphicsPipelineConfig& config, GraphicsPipelineLayoutInfo& layout_info);
 
     VkPhysicalDevice getPhysicalDevice() const { return physical_device_; }
     std::vector<float> tryRetrieveTimestampQueries();

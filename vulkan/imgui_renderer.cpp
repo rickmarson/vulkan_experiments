@@ -167,11 +167,11 @@ bool ImGuiRenderer::createGraphicsPipeline(RenderPass& render_pass, uint32_t sub
 
     subpass_number_ = subpass_number;
 
-    return ui_pipeline_.vk_graphics_pipeline != VK_NULL_HANDLE;
+    return ui_pipeline_.vk_pipeline != VK_NULL_HANDLE;
 }
 
 void ImGuiRenderer::cleanupGraphicsPipeline() {
-    vulkan_backend_->destroyGraphicsPipeline(ui_pipeline_);
+    vulkan_backend_->destroyPipeline(ui_pipeline_);
 }
 
 void ImGuiRenderer::beginFrame() {
@@ -308,7 +308,7 @@ RecordCommandsResult ImGuiRenderer::recordCommands(uint32_t swapchain_image, VkR
 
     vkCmdPushConstants(command_buffers[0], ui_pipeline_.vk_pipeline_layout, pc.stageFlags, pc.offset, pc.size, &ui_transform_push_constant_);
 
-    vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, ui_pipeline_.vk_graphics_pipeline);
+    vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, ui_pipeline_.vk_pipeline);
     vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, ui_pipeline_.vk_pipeline_layout, UI_UNIFORM_SET_ID, 1, &vk_descriptor_sets_[swapchain_image], 0, NULL);
 
     VkBuffer vertex_buffers[1] = { vertex_buffer_.vk_buffer };

@@ -494,7 +494,12 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
     return render_pass;
 }
 
-GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineConfig& config) {
+Pipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineConfig& config) {
+    GraphicsPipelineLayoutInfo layout_info;
+    if (!assembleGraphicsPipelineLayoutInfo(config, layout_info)) {
+        return Pipeline{};
+    }
+    
     VkPipelineShaderStageCreateInfo vert_shader_stage_info{};
     vert_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vert_shader_stage_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -507,100 +512,34 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
     frag_shader_stage_info.module = config.fragment->getShader();
     frag_shader_stage_info.pName = "main";
 
-    VkPipelineShaderStageCreateInfo shader_stages[] = { vert_shader_stage_info, frag_shader_stage_info };
+    std::vector<VkPipelineShaderStageCreateInfo> shader_stages = { vert_shader_stage_info, frag_shader_stage_info };
 
-    // assemble layout information from all shaders
-    DescriptorSetMetadata pipeline_descriptor_metadata{};
-    std::map<uint32_t, std::vector<VkDescriptorSetLayoutBinding>> layout_bindings_by_set;
+    if (config.tessellation) {
+        VkPipelineShaderStageCreateInfo tess_ctrl_shader_stage_info{};
+        tess_ctrl_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        tess_ctrl_shader_stage_info.stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+        tess_ctrl_shader_stage_info.module = config.tessellation.control->getShader();
+        tess_ctrl_shader_stage_info.pName = "main";
 
-    const auto& vertex_layouts = config.vertex->getDescriptorSetLayouts();
-    for (const auto& layout : vertex_layouts) {
-        if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
-            layout_bindings_by_set[layout.id] = layout.layout_bindings;
-        }
-        else {
-            auto& bindings_array = layout_bindings_by_set[layout.id];
-            bindings_array.insert(bindings_array.begin(), layout.layout_bindings.begin(), layout.layout_bindings.end());
-        }
-    }
-    const auto& vertex_descriptor_metadata = config.vertex->getDescriptorsMetadata();
-    for (const auto& meta : vertex_descriptor_metadata.set_bindings) {
-        pipeline_descriptor_metadata.set_bindings[meta.first] = meta.second;
+        VkPipelineShaderStageCreateInfo tess_eval_shader_stage_info{};
+        tess_eval_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        tess_eval_shader_stage_info.stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+        tess_eval_shader_stage_info.module = config.tessellation.evaluation->getShader();
+        tess_eval_shader_stage_info.pName = "main";
+
+        shader_stages.push_back(tess_ctrl_shader_stage_info);
+        shader_stages.push_back(tess_eval_shader_stage_info);
     }
 
-    const auto& fragment_layouts = config.fragment->getDescriptorSetLayouts();
-    for (const auto& layout : fragment_layouts) {
-        if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
-            layout_bindings_by_set[layout.id] = layout.layout_bindings;
-        }
-        else {
-            auto& bindings_array = layout_bindings_by_set[layout.id];
-            bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
-        }
+    if (config.geometry) {
+        VkPipelineShaderStageCreateInfo geometry_shader_stage_info{};
+        geometry_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        geometry_shader_stage_info.stage = VK_SHADER_STAGE_GEOMETRY_BIT;
+        geometry_shader_stage_info.module = config.geometry->getShader();
+        geometry_shader_stage_info.pName = "main";
+
+        shader_stages.push_back(geometry_shader_stage_info);
     }
-    const auto& fragment_descriptor_metadata = config.fragment->getDescriptorsMetadata();
-    for (const auto& meta : fragment_descriptor_metadata.set_bindings) {
-        auto& bindings_map = pipeline_descriptor_metadata.set_bindings[meta.first];
-        for (const auto& src_binding : meta.second) {
-            bindings_map.insert(src_binding);
-        }
-    }
-
-    // create descriptor layouts for all sets of binding points in the pipeline
-    std::map<uint32_t, VkDescriptorSetLayout> descriptors_set_layouts;
-    std::map<uint32_t, std::vector< VkDescriptorSet>> descriptor_sets;
-    for (auto& set : layout_bindings_by_set) {
-        VkDescriptorSetLayoutCreateInfo layout_create_info{};
-        layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layout_create_info.bindingCount = static_cast<uint32_t>(set.second.size());
-        layout_create_info.pBindings = set.second.data();
-
-        VkDescriptorSetLayout descriptor_set_layout;
-        if (vkCreateDescriptorSetLayout(device_, &layout_create_info, nullptr, &descriptor_set_layout) != VK_SUCCESS) {
-            std::cerr << "Failed to create descriptor set layout!" << std::endl;
-            return GraphicsPipeline{};
-        }
-
-        descriptors_set_layouts[set.first] = descriptor_set_layout;
-    }
-
-    // auxiliary array to make sure the layouts are ordered and contiguous in memory
-    std::vector<VkDescriptorSetLayout> descriptors_set_layouts_aux;
-    for (auto& layout : descriptors_set_layouts) {
-        descriptors_set_layouts_aux.push_back(layout.second);
-    }
-
-    // assemble push constants  
-    std::vector<VkPushConstantRange> push_constants_array;
-    PushConstantsMap push_constants_map;
-    auto compare = [](const PushConstantBlock& a, const PushConstantBlock& b) { return a.name < b.name; };
-    std::set<PushConstantBlock, decltype(compare)> push_constants_temp(compare);
-
-    const auto& vertex_push_constants = config.vertex->getPushConstants();
-    const auto& fragment_push_constants = config.fragment->getPushConstants();
-
-    for (const auto& pc : vertex_push_constants) {
-        push_constants_temp.insert(pc);
-    }
-
-    for (const auto& pc : fragment_push_constants) {
-        auto dst_iter = push_constants_temp.find(pc);
-        if ( dst_iter == push_constants_temp.end()) {
-            push_constants_temp.insert(pc);
-        } else {
-            auto new_block = *(dst_iter);
-            new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
-            push_constants_temp.erase(dst_iter);
-            push_constants_temp.insert(new_block);
-        }
-    }
-    
-    for (auto& pc : push_constants_temp) {
-        push_constants_array.push_back(pc.push_constant_range);
-        push_constants_map.insert({pc.name, pc.push_constant_range});
-    }
-    push_constants_temp.clear();
-
     // fixed functionality configuration
 
     VkPipelineVertexInputStateCreateInfo vertex_input_info{};
@@ -691,21 +630,21 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
 
     VkPipelineLayoutCreateInfo pipeline_layout_info{};
     pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(descriptors_set_layouts_aux.size());
-    pipeline_layout_info.pSetLayouts = descriptors_set_layouts_aux.data();
-    pipeline_layout_info.pushConstantRangeCount = push_constants_array.size();
-    pipeline_layout_info.pPushConstantRanges = push_constants_array.size() > 0 ? push_constants_array.data() : nullptr;
+    pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(layout_info.descriptors_set_layouts_aux.size());
+    pipeline_layout_info.pSetLayouts = layout_info.descriptors_set_layouts_aux.data();
+    pipeline_layout_info.pushConstantRangeCount = layout_info.push_constants_array.size();
+    pipeline_layout_info.pPushConstantRanges = layout_info.push_constants_array.size() > 0 ? layout_info.push_constants_array.data() : nullptr;
 
     VkPipelineLayout pipeline_layout;
     if (vkCreatePipelineLayout(device_, &pipeline_layout_info, nullptr, &pipeline_layout) != VK_SUCCESS) {
-        std::cerr << "Failed to create pipeline layout!" << std::endl;
-        return GraphicsPipeline{};
+        std::cerr << "Failed to create graphics pipeline layout!" << std::endl;
+        return Pipeline{};
     }
 
     VkGraphicsPipelineCreateInfo pipeline_info{};
     pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipeline_info.stageCount = 2;
-    pipeline_info.pStages = shader_stages;
+    pipeline_info.stageCount = static_cast<uint32_t>(shader_stages.size());
+    pipeline_info.pStages = shader_stages.data();
     pipeline_info.pVertexInputState = &vertex_input_info;
     pipeline_info.pInputAssemblyState = &input_assembly;
     pipeline_info.pViewportState = &viewport_state;
@@ -722,21 +661,123 @@ GraphicsPipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineCon
     
     VkPipeline vk_pipeline;
     if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &vk_pipeline) != VK_SUCCESS) {
-        std::cerr << "Failed to create graphics pipeline!" << std::endl;
-        return GraphicsPipeline{};
+        std::cerr << "Failed to create Graphics pipeline!" << std::endl;
+        return Pipeline{};
     }
 
-    auto key = std::hash<std::string>{}(config.name);
-    GraphicsPipeline graphics_pipeline{ 
+    Pipeline graphics_pipeline{ 
         config.name, 
+        PipelineType::GRAPHICS,
         pipeline_layout, 
+        vk_pipeline,
+        std::move(layout_info.descriptors_set_layouts),
+        std::move(layout_info.pipeline_descriptor_metadata),
+        std::move(layout_info.push_constants_map)
+    };
+
+    return graphics_pipeline;
+}
+
+Pipeline VulkanBackend::createComputePipeline(const ComputePipelineConfig& config) {
+    if (!config.compute) {
+        return Pipeline{};
+    }
+
+    DescriptorSetMetadata pipeline_descriptor_metadata;
+    std::map<uint32_t, std::vector<VkDescriptorSetLayoutBinding>> layout_bindings_by_set;
+    const auto& compute_layouts = config.compute->getDescriptorSetLayouts();
+    for (const auto& layout : compute_layouts) {
+        if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
+            layout_bindings_by_set[layout.id] = layout.layout_bindings;
+        }
+        else {
+            auto& bindings_array = layout_bindings_by_set[layout.id];
+            bindings_array.insert(bindings_array.begin(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+        }
+    }
+    const auto& compute_descriptor_metadata = config.compute->getDescriptorsMetadata();
+    for (const auto& meta : compute_descriptor_metadata.set_bindings) {
+        pipeline_descriptor_metadata.set_bindings[meta.first] = meta.second;
+    }
+
+    // create descriptor layouts for all sets of binding points in the pipeline
+    std::map<uint32_t, VkDescriptorSetLayout> descriptors_set_layouts;
+    std::map<uint32_t, std::vector< VkDescriptorSet>> descriptor_sets;
+    for (auto& set : layout_bindings_by_set) {
+        VkDescriptorSetLayoutCreateInfo layout_create_info{};
+        layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layout_create_info.bindingCount = static_cast<uint32_t>(set.second.size());
+        layout_create_info.pBindings = set.second.data();
+
+        VkDescriptorSetLayout descriptor_set_layout;
+        if (vkCreateDescriptorSetLayout(device_, &layout_create_info, nullptr, &descriptor_set_layout) != VK_SUCCESS) {
+            std::cerr << "Failed to create compute pipeline descriptor set layout!" << std::endl;
+            return Pipeline{};
+        }
+
+        descriptors_set_layouts[set.first] = descriptor_set_layout;
+    }
+
+    // auxiliary array to make sure the layouts are ordered and contiguous in memory
+    std::vector<VkDescriptorSetLayout> descriptors_set_layouts_aux;
+    for (auto& layout : descriptors_set_layouts) {
+        descriptors_set_layouts_aux.push_back(layout.second);
+    }
+
+    // assemble push constants 
+    std::vector<VkPushConstantRange> push_constants_array;
+    auto& compute_push_constants = config.compute->getPushConstants();
+    PushConstantsMap push_constants_map;
+    for (auto& pc : compute_push_constants) {
+        push_constants_array.push_back(pc.push_constant_range);
+        push_constants_map.insert({ pc.name, pc.push_constant_range });
+    }
+
+    VkPipelineLayoutCreateInfo pipeline_layout_info{};
+    pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(descriptors_set_layouts_aux.size());
+    pipeline_layout_info.pSetLayouts = descriptors_set_layouts_aux.data();
+    pipeline_layout_info.pushConstantRangeCount = push_constants_array.size();
+    pipeline_layout_info.pPushConstantRanges = push_constants_array.size() > 0 ? push_constants_array.data() : nullptr;
+
+    VkPipelineLayout pipeline_layout;
+    if (vkCreatePipelineLayout(device_, &pipeline_layout_info, nullptr, &pipeline_layout) != VK_SUCCESS) {
+        std::cerr << "Failed to create compute pipeline layout!" << std::endl;
+        return Pipeline{};
+    }
+
+    VkPipelineShaderStageCreateInfo compute_shader_stage_info{};
+    compute_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    compute_shader_stage_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    compute_shader_stage_info.module = config.compute->getShader();
+    compute_shader_stage_info.pName = "main";
+
+    VkComputePipelineCreateInfo create_info{};
+    create_info.sType;
+    create_info.pNext = nullptr;
+    create_info.flags = 0;
+    create_info.stage = compute_shader_stage_info;
+    create_info.layout = pipeline_layout;
+    create_info.basePipelineHandle = VK_NULL_HANDLE;
+    create_info.basePipelineIndex = -1;
+
+    VkPipeline vk_pipeline;
+    if (vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &create_info, nullptr, &vk_pipeline) != VK_SUCCESS) {
+        std::cerr << "Failed to create Compute pipeline!" << std::endl;
+        return Pipeline{};
+    }
+
+    Pipeline compute_pipeline{
+        config.name,
+        PipelineType::COMPUTE,
+        pipeline_layout,
         vk_pipeline,
         std::move(descriptors_set_layouts),
         std::move(pipeline_descriptor_metadata),
         std::move(push_constants_map)
     };
 
-    return graphics_pipeline;
+    return compute_pipeline;
 }
 
 VkResult VulkanBackend::startNextFrame(uint32_t& swapchain_image, bool window_resized) {
@@ -1275,15 +1316,15 @@ void VulkanBackend::destroyRenderPass(RenderPass& render_pass) {
     render_pass = RenderPass{};
 }
 
-void VulkanBackend::destroyGraphicsPipeline(GraphicsPipeline& graphics_pipeline) {
+void VulkanBackend::destroyPipeline(Pipeline& graphics_pipeline) {
     for (auto& descr_set_layout : graphics_pipeline.vk_descriptor_set_layouts) {
         vkDestroyDescriptorSetLayout(device_, descr_set_layout.second, nullptr);
     }
     
-    vkDestroyPipeline(device_, graphics_pipeline.vk_graphics_pipeline, nullptr);
+    vkDestroyPipeline(device_, graphics_pipeline.vk_pipeline, nullptr);
     vkDestroyPipelineLayout(device_, graphics_pipeline.vk_pipeline_layout, nullptr);
     graphics_pipeline.vk_descriptor_set_layouts.clear();
-    graphics_pipeline = GraphicsPipeline{};
+    graphics_pipeline = Pipeline{};
 }
 
 void VulkanBackend::destroyUniformBuffer(UniformBuffer& uniform_buffer) {
@@ -1319,6 +1360,212 @@ VkImageView VulkanBackend::createImageView(VkImage image, VkFormat format, VkIma
     }
 
     return image_view;
+}
+
+bool VulkanBackend::assembleGraphicsPipelineLayoutInfo(const GraphicsPipelineConfig& config, GraphicsPipelineLayoutInfo& layout_info) {
+    // assemble layout information from all shaders
+    std::map<uint32_t, std::vector<VkDescriptorSetLayoutBinding>> layout_bindings_by_set;
+
+    // vertex and fragment must be present
+    if (!config.vertex || !config.fragment) {
+        return false;
+    }
+
+    const auto& vertex_layouts = config.vertex->getDescriptorSetLayouts();
+    for (const auto& layout : vertex_layouts) {
+        if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
+            layout_bindings_by_set[layout.id] = layout.layout_bindings;
+        }
+        else {
+            auto& bindings_array = layout_bindings_by_set[layout.id];
+            bindings_array.insert(bindings_array.begin(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+        }
+    }
+    const auto& vertex_descriptor_metadata = config.vertex->getDescriptorsMetadata();
+    for (const auto& meta : vertex_descriptor_metadata.set_bindings) {
+        layout_info.pipeline_descriptor_metadata.set_bindings[meta.first] = meta.second;
+    }
+
+    const auto& fragment_layouts = config.fragment->getDescriptorSetLayouts();
+    for (const auto& layout : fragment_layouts) {
+        if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
+            layout_bindings_by_set[layout.id] = layout.layout_bindings;
+        }
+        else {
+            auto& bindings_array = layout_bindings_by_set[layout.id];
+            bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+        }
+    }
+    const auto& fragment_descriptor_metadata = config.fragment->getDescriptorsMetadata();
+    for (const auto& meta : fragment_descriptor_metadata.set_bindings) {
+        auto& bindings_map = layout_info.pipeline_descriptor_metadata.set_bindings[meta.first];
+        for (const auto& src_binding : meta.second) {
+            bindings_map.insert(src_binding);
+        }
+    }
+
+    // optional shaders
+    if (config.tessellation) {
+        // tessellation control
+        const auto& tess_ctrl_layouts = config.tessellation.control->getDescriptorSetLayouts();
+        for (const auto& layout : tess_ctrl_layouts) {
+            if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
+                layout_bindings_by_set[layout.id] = layout.layout_bindings;
+            }
+            else {
+                auto& bindings_array = layout_bindings_by_set[layout.id];
+                bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+            }
+        }
+        const auto& tess_ctrl_descriptor_metadata = config.tessellation.control->getDescriptorsMetadata();
+        for (const auto& meta : tess_ctrl_descriptor_metadata.set_bindings) {
+            auto& bindings_map = layout_info.pipeline_descriptor_metadata.set_bindings[meta.first];
+            for (const auto& src_binding : meta.second) {
+                bindings_map.insert(src_binding);
+            }
+        }
+
+        // tessellation evaluation
+        const auto& tess_eval_layouts = config.tessellation.evaluation->getDescriptorSetLayouts();
+        for (const auto& layout : tess_eval_layouts) {
+            if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
+                layout_bindings_by_set[layout.id] = layout.layout_bindings;
+            }
+            else {
+                auto& bindings_array = layout_bindings_by_set[layout.id];
+                bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+            }
+        }
+        const auto& tess_eval_descriptor_metadata = config.tessellation.evaluation->getDescriptorsMetadata();
+        for (const auto& meta : tess_eval_descriptor_metadata.set_bindings) {
+            auto& bindings_map = layout_info.pipeline_descriptor_metadata.set_bindings[meta.first];
+            for (const auto& src_binding : meta.second) {
+                bindings_map.insert(src_binding);
+            }
+        }
+    }
+
+    if (config.geometry) {
+        const auto& geom_layouts = config.geometry->getDescriptorSetLayouts();
+        for (const auto& layout : geom_layouts) {
+            if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
+                layout_bindings_by_set[layout.id] = layout.layout_bindings;
+            }
+            else {
+                auto& bindings_array = layout_bindings_by_set[layout.id];
+                bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+            }
+        }
+        const auto& geom_descriptor_metadata = config.geometry->getDescriptorsMetadata();
+        for (const auto& meta : geom_descriptor_metadata.set_bindings) {
+            auto& bindings_map = layout_info.pipeline_descriptor_metadata.set_bindings[meta.first];
+            for (const auto& src_binding : meta.second) {
+                bindings_map.insert(src_binding);
+            }
+        }
+    }
+
+    // create descriptor layouts for all sets of binding points in the pipeline
+    std::map<uint32_t, std::vector< VkDescriptorSet>> descriptor_sets;
+    for (auto& set : layout_bindings_by_set) {
+        VkDescriptorSetLayoutCreateInfo layout_create_info{};
+        layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layout_create_info.bindingCount = static_cast<uint32_t>(set.second.size());
+        layout_create_info.pBindings = set.second.data();
+
+        VkDescriptorSetLayout descriptor_set_layout;
+        if (vkCreateDescriptorSetLayout(device_, &layout_create_info, nullptr, &descriptor_set_layout) != VK_SUCCESS) {
+            std::cerr << "Failed to create graphics pipeline descriptor set layout!" << std::endl;
+            return false;
+        }
+
+        layout_info.descriptors_set_layouts[set.first] = descriptor_set_layout;
+    }
+
+    // auxiliary array to make sure the layouts are ordered and contiguous in memory
+    for (auto& layout : layout_info.descriptors_set_layouts) {
+        layout_info.descriptors_set_layouts_aux.push_back(layout.second);
+    }
+
+    // assemble push constants  
+    auto compare = [](const PushConstantBlock& a, const PushConstantBlock& b) { return a.name < b.name; };
+    std::set<PushConstantBlock, decltype(compare)> push_constants_temp(compare);
+
+    const auto& vertex_push_constants = config.vertex->getPushConstants();
+    const auto& fragment_push_constants = config.fragment->getPushConstants();
+
+    for (const auto& pc : vertex_push_constants) {
+        push_constants_temp.insert(pc);
+    }
+
+    for (const auto& pc : fragment_push_constants) {
+        auto dst_iter = push_constants_temp.find(pc);
+        if (dst_iter == push_constants_temp.end()) {
+            push_constants_temp.insert(pc);
+        }
+        else {
+            auto new_block = *(dst_iter);
+            new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
+            push_constants_temp.erase(dst_iter);
+            push_constants_temp.insert(new_block);
+        }
+    }
+
+    if (config.tessellation) {
+        // tessellation control
+        const auto& tess_ctrl_push_constants = config.tessellation.control->getPushConstants();
+        for (const auto& pc : tess_ctrl_push_constants) {
+            auto dst_iter = push_constants_temp.find(pc);
+            if (dst_iter == push_constants_temp.end()) {
+                push_constants_temp.insert(pc);
+            }
+            else {
+                auto new_block = *(dst_iter);
+                new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
+                push_constants_temp.erase(dst_iter);
+                push_constants_temp.insert(new_block);
+            }
+        }
+
+        // tessellation evaluation
+        const auto& tess_eval_push_constants = config.tessellation.evaluation->getPushConstants();
+        for (const auto& pc : tess_eval_push_constants) {
+            auto dst_iter = push_constants_temp.find(pc);
+            if (dst_iter == push_constants_temp.end()) {
+                push_constants_temp.insert(pc);
+            }
+            else {
+                auto new_block = *(dst_iter);
+                new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
+                push_constants_temp.erase(dst_iter);
+                push_constants_temp.insert(new_block);
+            }
+        }
+    }
+
+    if (config.geometry) {
+        const auto& geom_push_constants = config.geometry->getPushConstants();
+        for (const auto& pc : geom_push_constants) {
+            auto dst_iter = push_constants_temp.find(pc);
+            if (dst_iter == push_constants_temp.end()) {
+                push_constants_temp.insert(pc);
+            }
+            else {
+                auto new_block = *(dst_iter);
+                new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
+                push_constants_temp.erase(dst_iter);
+                push_constants_temp.insert(new_block);
+            }
+        }
+    }
+
+    for (auto& pc : push_constants_temp) {
+        layout_info.push_constants_array.push_back(pc.push_constant_range);
+        layout_info.push_constants_map.insert({ pc.name, pc.push_constant_range });
+    }
+    push_constants_temp.clear();
+
+    return true;
 }
 
 std::vector<float> VulkanBackend::tryRetrieveTimestampQueries() {

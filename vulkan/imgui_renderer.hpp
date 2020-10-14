@@ -59,7 +59,7 @@ private:
 	UiTransform ui_transform_push_constant_;
 	std::vector<VkDescriptorSet> vk_descriptor_sets_;
 
-	GraphicsPipeline ui_pipeline_;
+	Pipeline ui_pipeline_;
 	uint32_t subpass_number_ = 0;
 	std::vector<VkCommandBuffer> vk_drawing_buffers_;  // these are secondary buffers for recording UI drawing commands
 };
