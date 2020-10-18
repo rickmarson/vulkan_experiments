@@ -33,6 +33,7 @@ struct GraphicsPipelineConfig {
         operator bool() const { return control && evaluation; }
     }tessellation;
     // vertex buffer desc
+    VkPrimitiveTopology topology;
     VkVertexInputBindingDescription vertex_buffer_binding_desc;
     std::vector<VkVertexInputAttributeDescription> vertex_buffer_attrib_desc;
 
@@ -45,6 +46,13 @@ struct GraphicsPipelineConfig {
 
     RenderPass render_pass;
     uint32_t subpass_number = 0;
+};
+
+struct DescriptorPoolConfig {
+    uint32_t uniform_buffers_count = 0;
+    uint32_t image_samplers_count = 0;
+    uint32_t storage_texel_buffers_count = 0;
+    uint32_t max_sets = 0;
 };
 
 struct ComputePipelineConfig {
@@ -73,6 +81,8 @@ public:
     bool startUp();
     void shutDown();
     void waitDeviceIdle() const;
+    void waitComputeQueueIdle() const;
+    void waitGraphicsQueueIdle() const;
 
     bool recreateSwapChain();
     
@@ -80,7 +90,7 @@ public:
     std::shared_ptr<Texture> createTexture(const std::string& name);
     std::shared_ptr<Mesh> createMesh(const std::string& name);
 
-    bool createDescriptorPool(uint32_t buffer_count, uint32_t sampler_count, uint32_t max_sets = 0);
+    bool createDescriptorPool(const DescriptorPoolConfig& config);
     std::vector<VkCommandBuffer> createPrimaryCommandBuffers(uint32_t count) const; // the caller is responsible for managing these
     std::vector<VkCommandBuffer> createSecondaryCommandBuffers(uint32_t count) const; // the caller is responsible for managing these
     void resetCommandBuffers(std::vector<VkCommandBuffer>& cmd_buffers) const;
@@ -91,18 +101,21 @@ public:
     Pipeline createComputePipeline(const ComputePipelineConfig& config);
 
     template<typename DataType>
-    Buffer createVertexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool static_buffer = true);
+    Buffer createVertexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool host_visible = true, bool compute_visible = false);
 
     template<typename DataType>
-    Buffer createIndexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool static_buffer = true);
+    Buffer createIndexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool host_visible = true);
 
     template<typename DataType>
     void updateBuffer(Buffer& dst_buffer, const std::vector<DataType>& src_buffer);
 
     template<typename DataType>
     UniformBuffer createUniformBuffer(const std::string base_name);
+
+    bool createBufferView(Buffer& buffer, VkFormat format);
     
     void updateDescriptorSets(const UniformBuffer& buffer, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding);
+    void updateDescriptorSets(const Buffer& buffer, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding);
 
     void destroyBuffer(Buffer& buffer);
     void destroyRenderPass(RenderPass& render_pass);
@@ -110,7 +123,8 @@ public:
     void destroyUniformBuffer(UniformBuffer& uniform_buffer);
     
     VkResult startNextFrame(uint32_t& next_swapchain_image, bool window_resized);
-    VkResult submitCommands(uint32_t swapchain_image, const std::vector<VkCommandBuffer>& command_buffers);
+    VkResult submitGraphicsCommands(uint32_t swapchain_image, const std::vector<VkCommandBuffer>& command_buffers);
+    VkResult submitComputeCommands(const std::vector<VkCommandBuffer>& command_buffers);
 
     VkCommandBuffer beginSingleTimeCommands();
     void endSingleTimeCommands(VkCommandBuffer command_buffer);
@@ -160,7 +174,8 @@ private:
     std::vector<float> tryRetrieveTimestampQueries();
 
     const uint32_t max_frames_in_flight_ = 2;
-    size_t current_frame_ = 0;
+    size_t active_swapchain_image_ = 0;
+    size_t current_frame_ = 0;  // total frame count since last swapchain reset
     VkExtent2D window_swap_extent_ = { 0, 0 };
     SwapChainSupportDetails swap_chain_support_;
 
@@ -169,6 +184,7 @@ private:
     VkPhysicalDevice physical_device_ = VK_NULL_HANDLE;
     VkDevice device_ = VK_NULL_HANDLE;  // logical device
     VkQueue graphics_queue_ = VK_NULL_HANDLE;
+    VkQueue compute_queue_ = VK_NULL_HANDLE;
     VkQueue present_queue_ = VK_NULL_HANDLE; // display to window
     VkSwapchainKHR swap_chain_ = VK_NULL_HANDLE;
     std::vector<VkImage> swap_chain_images_;
@@ -182,33 +198,44 @@ private:
     uint32_t timestamp_queries_ = 0;
     float timestamp_period_ = 1.f;
 
+    // synchronization between graphics and present queues
     std::vector<VkSemaphore> image_available_semaphores_;
     std::vector<VkSemaphore> render_finished_semaphores_;
     std::vector<VkFence> in_flight_fences_;
     std::vector<VkFence> images_in_flight_;
+
+    // synchronization between graphics and compute queues
+    VkSemaphore compute_finished_semaphore_ = VK_NULL_HANDLE;
+    VkSemaphore drawing_finished_sempahore_ = VK_NULL_HANDLE;
+    bool graphics_should_wait_for_compute_ = false;
 };
 
 // inlines
 
 template<typename DataType>
-Buffer VulkanBackend::createVertexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool static_buffer) {
-    if (static_buffer) {
+Buffer VulkanBackend::createVertexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool host_visible, bool compute_visible) {
+    VkBufferUsageFlags final_usage_flags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    if (compute_visible) {
+        final_usage_flags |= VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT;
+    }
+
+    if (host_visible) {
         Buffer staging_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, true);
         updateBuffer<DataType>(staging_buffer, src_buffer);
-        Buffer vertex_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_SHARING_MODE_EXCLUSIVE, false);
+        Buffer vertex_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_DST_BIT | final_usage_flags, VK_SHARING_MODE_EXCLUSIVE, false);
         copyBufferToGpuLocalMemory(staging_buffer.vk_buffer, vertex_buffer.vk_buffer, sizeof(DataType) * src_buffer.size());
         destroyBuffer(staging_buffer);
         return vertex_buffer;
     } else {
-        Buffer vertex_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_SHARING_MODE_EXCLUSIVE, true);
+        Buffer vertex_buffer = createBuffer<DataType>(name, src_buffer, final_usage_flags, VK_SHARING_MODE_EXCLUSIVE, true);
         updateBuffer<DataType>(vertex_buffer, src_buffer);
         return vertex_buffer;
     }
 }
 
 template<typename DataType>
-Buffer VulkanBackend::createIndexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool static_buffer) {
-    if (static_buffer) {
+Buffer VulkanBackend::createIndexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool host_visible) {
+    if (host_visible) {
         Buffer staging_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, true);
         updateBuffer<DataType>(staging_buffer, src_buffer);
         Buffer index_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_SHARING_MODE_EXCLUSIVE, false);
@@ -263,6 +290,7 @@ Buffer VulkanBackend::createBuffer(const std::string& name,
     Buffer buffer;
     buffer.name = name;
     buffer.host_visible = host_visible;
+    buffer.buffer_size = sizeof(DataType) * src_buffer.size();
     buffer.type = buffer_usage;
     buffer.vk_buffer = vk_buffer;
     buffer.vk_buffer_memory = memory;

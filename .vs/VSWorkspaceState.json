@@ -3,13 +3,10 @@
     "",
     "\\apps",
     "\\apps\\model_viewer",
-    "\\docker",
-    "\\docker\\linux",
-    "\\docker\\linux\\base_image",
+    "\\apps\\rainy_alley",
     "\\shaders",
-    "\\utilities\\imgui\\examples",
     "\\vulkan"
   ],
-  "SelectedNode": "\\utilities",
+  "SelectedNode": "\\shaders\\rain_drops.vert",
   "PreviewInSolutionExplorer": false
 }

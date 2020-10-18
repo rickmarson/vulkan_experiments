@@ -136,7 +136,7 @@ void VulkanApp::drawFrame() {
 
     if (success) {
         auto cmd_buffer = std::get<1>(commands);
-        result = vulkan_backend_.submitCommands(next_swapchain_image, cmd_buffer);
+        result = vulkan_backend_.submitGraphicsCommands(next_swapchain_image, cmd_buffer);
     }
 
     if (result != VK_SUCCESS) {

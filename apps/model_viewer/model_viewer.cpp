@@ -97,7 +97,10 @@ bool ModelViewer::loadAssets() {
 }
 
 bool ModelViewer::setupScene() {
-	vulkan_backend_.createDescriptorPool(2, 2);
+	DescriptorPoolConfig pool_config;
+	pool_config.uniform_buffers_count = 2 * vulkan_backend_.getSwapChainSize();
+	pool_config.image_samplers_count = 2 * vulkan_backend_.getSwapChainSize();
+	vulkan_backend_.createDescriptorPool(pool_config);
 
 	RenderPassConfig render_pass_config;
 	render_pass_config.name = "Main Pass";
@@ -174,6 +177,7 @@ bool ModelViewer::createGraphicsPipeline() {
 	config.name = "Solid Geometry";
 	config.vertex = shaders_["vertex"];
 	config.fragment = shaders_["fragment"];
+	config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	config.vertex_buffer_binding_desc = shaders_["vertex"]->getInputBindingDescription();
 	config.vertex_buffer_attrib_desc = shaders_["vertex"]->getInputAttributes();
 	config.render_pass = render_pass_;

@@ -152,6 +152,7 @@ bool ImGuiRenderer::createGraphicsPipeline(RenderPass& render_pass, uint32_t sub
     config.name = "UI Overlay";
     config.vertex = imgui_vertex_shader_;
     config.fragment = imgui_fragment_shader_;
+    config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.vertex_buffer_binding_desc = imgui_vertex_shader_->getInputBindingDescription();
     config.vertex_buffer_attrib_desc = imgui_vertex_shader_->getInputAttributes();
     config.render_pass = render_pass;

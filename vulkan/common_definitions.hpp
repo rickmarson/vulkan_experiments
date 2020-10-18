@@ -32,10 +32,12 @@ class Texture;
 struct Buffer {
     std::string name;
     bool host_visible = false;
+    size_t buffer_size = 0;
 
     VkBufferUsageFlags type = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
     VkBuffer vk_buffer = VK_NULL_HANDLE;
     VkDeviceMemory vk_buffer_memory = VK_NULL_HANDLE;
+    VkBufferView vk_buffer_view = VK_NULL_HANDLE; // optional
 };
 
 struct UniformBuffer {
@@ -104,6 +106,20 @@ struct Vertex {
     }
 };
 
+struct ParticleVertex {
+    glm::vec4 pos;
+    glm::vec4 vel;
+
+    static VertexFormatInfo getFormatInfo() {
+        std::vector<size_t> offsets = { offsetof(ParticleVertex, pos),  offsetof(ParticleVertex, vel) };
+        return { sizeof(ParticleVertex) , offsets };
+    }
+
+    bool operator==(const ParticleVertex& other) const {
+        return pos == other.pos && vel == other.vel;
+    }
+};
+
 struct SceneData {
     glm::mat4 view;
     glm::mat4 proj;
@@ -120,6 +136,14 @@ const uint32_t MODEL_UNIFORM_SET_ID = 1;
 const std::string MODEL_DATA_BINDING_NAME = "model";  // holds model-specific numeric data (model transform, etc...)
 const std::string DIFFUSE_SAMPLER_BINDING_NAME = "diffuse_sampler";  // holds the diffuse texture of the surface / mesh being drawn
 
+const uint32_t COMPUTE_PARTICLE_BUFFER_SET_ID = 0;
+const std::string COMPUTE_PARTICLE_BUFFER_BINDING_NAME = "particle_buffer";
+
+struct ParticlesGlobalState {
+    uint32_t particles_count = 0;
+    float delta_time_s = 0.0f;
+}; // push constant
+const std::string COMPUTE_PARTICLES_GLOBAL_STATE_PC = "GlobalState";
 
 struct UiTransform {
     glm::vec2 scale;

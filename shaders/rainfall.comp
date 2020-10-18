@@ -1,0 +1,32 @@
+#version 450
+#extension GL_ARB_separate_shader_objects : enable
+
+layout(local_size_x = 32) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform imageBuffer particle_buffer;
+
+layout(push_constant) uniform GlobalState {
+    uint particles_count;
+    float delta_time;
+} global_state;
+
+const float g = -9.81;
+
+void main() {
+    if (gl_GlobalInvocationID.x < global_state.particles_count) {
+        int particle_idx = int(gl_GlobalInvocationID.x * 2);
+        vec4 pos = imageLoad(particle_buffer, particle_idx);
+        vec4 vel = imageLoad(particle_buffer, particle_idx + 1);
+
+        vel = vec4(vel.xyz, 0.0) + vec4(0.0, 0.0, g, 0.0) * global_state.delta_time;
+        pos = vec4(pos.xyz, 1.0) + vel * global_state.delta_time;
+
+        if (pos.z < -5.0) {
+            vel = vec4(0.0, 0.0, 0.0, 0.0);
+            pos.z = 5.0f;
+        }
+
+        imageStore(particle_buffer, particle_idx, pos);
+        imageStore(particle_buffer, particle_idx + 1, vel);
+    }
+}

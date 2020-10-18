@@ -273,6 +273,9 @@ void VulkanBackend::shutDown() {
         vkDestroyFence(device_, in_flight_fences_[i], nullptr);
     }
 
+    vkDestroySemaphore(device_, compute_finished_semaphore_, nullptr);
+    vkDestroySemaphore(device_, drawing_finished_sempahore_, nullptr);
+
     if (timestampQueriesEnabled()) {
         vkDestroyQueryPool(device_, timestamp_queries_pool_, nullptr);
     }
@@ -287,6 +290,14 @@ void VulkanBackend::shutDown() {
 
 void VulkanBackend::waitDeviceIdle() const {
     vkDeviceWaitIdle(device_);
+}
+
+void VulkanBackend::waitComputeQueueIdle() const {
+    vkQueueWaitIdle(compute_queue_);
+}
+
+void VulkanBackend::waitGraphicsQueueIdle() const {
+    vkQueueWaitIdle(graphics_queue_);
 }
 
 std::shared_ptr<ShaderModule> VulkanBackend::createShaderModule(const std::string& name) const {
@@ -551,7 +562,7 @@ Pipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineConfig& con
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly{};
     input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    input_assembly.topology = config.topology;
     input_assembly.primitiveRestartEnable = VK_FALSE;
 
     VkViewport viewport{};
@@ -753,7 +764,7 @@ Pipeline VulkanBackend::createComputePipeline(const ComputePipelineConfig& confi
     compute_shader_stage_info.pName = "main";
 
     VkComputePipelineCreateInfo create_info{};
-    create_info.sType;
+    create_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     create_info.pNext = nullptr;
     create_info.flags = 0;
     create_info.stage = compute_shader_stage_info;
@@ -785,9 +796,9 @@ VkResult VulkanBackend::startNextFrame(uint32_t& swapchain_image, bool window_re
         return VK_ERROR_OUT_OF_DATE_KHR;
     }
 
-    vkWaitForFences(device_, 1, &in_flight_fences_[current_frame_], VK_TRUE, UINT64_MAX);
+    vkWaitForFences(device_, 1, &in_flight_fences_[active_swapchain_image_], VK_TRUE, UINT64_MAX);
 
-    VkResult result = vkAcquireNextImageKHR(device_, swap_chain_, UINT64_MAX, image_available_semaphores_[current_frame_], VK_NULL_HANDLE, &swapchain_image);
+    VkResult result = vkAcquireNextImageKHR(device_, swap_chain_, UINT64_MAX, image_available_semaphores_[active_swapchain_image_], VK_NULL_HANDLE, &swapchain_image);
 
     auto needs_rebuilding = (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR);
     auto error = (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR);
@@ -800,44 +811,61 @@ VkResult VulkanBackend::startNextFrame(uint32_t& swapchain_image, bool window_re
     }
     if (error || needs_rebuilding) {
         // clear the image semaphore as we won't be submitting the queue that waits for it this frame
-        vkDestroySemaphore(device_, image_available_semaphores_[current_frame_], nullptr);
+        vkDestroySemaphore(device_, image_available_semaphores_[active_swapchain_image_], nullptr);
+        // reset the compute sync semaphores
+        vkDestroySemaphore(device_, drawing_finished_sempahore_, nullptr);
+        vkDestroySemaphore(device_, compute_finished_semaphore_, nullptr);
 
         VkSemaphoreCreateInfo semaphore_info{};
         semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-        if (vkCreateSemaphore(device_, &semaphore_info, nullptr, &image_available_semaphores_[current_frame_]) != VK_SUCCESS) {
-            std::cerr << "Failed to reset the semaphore for swapchain image " << current_frame_ << std::endl;
-        }   
+        if (vkCreateSemaphore(device_, &semaphore_info, nullptr, &image_available_semaphores_[active_swapchain_image_]) != VK_SUCCESS) {
+            std::cerr << "Failed to reset the semaphore for swapchain image " << active_swapchain_image_ << std::endl;
+        } 
+        if (vkCreateSemaphore(device_, &semaphore_info, nullptr, &drawing_finished_sempahore_) != VK_SUCCESS) {
+            std::cerr << "Failed to reset the drawing finished semaphore" << active_swapchain_image_ << std::endl;
+        }
+        if (vkCreateSemaphore(device_, &semaphore_info, nullptr, &compute_finished_semaphore_) != VK_SUCCESS) {
+            std::cerr << "Failed to reset the compute finished semaphore" << active_swapchain_image_ << std::endl;
+        }
     }
 
     return result;
 }
 
-VkResult VulkanBackend::submitCommands(uint32_t swapchain_image, const std::vector<VkCommandBuffer>& command_buffers) {
+VkResult VulkanBackend::submitGraphicsCommands(uint32_t swapchain_image, const std::vector<VkCommandBuffer>& command_buffers) {
     // Check if a previous frame is using this image (i.e. there is its fence to wait on)
     if (images_in_flight_[swapchain_image] != VK_NULL_HANDLE) {
         vkWaitForFences(device_, 1, &images_in_flight_[swapchain_image], VK_TRUE, UINT64_MAX);
     }
     // Mark the image as now being in use by this frame
-    images_in_flight_[swapchain_image] = in_flight_fences_[current_frame_];
+    images_in_flight_[swapchain_image] = in_flight_fences_[active_swapchain_image_];
 
     VkSubmitInfo submit_info{};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkSemaphore wait_semaphores[] = { image_available_semaphores_[current_frame_] };
-    VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-    submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = wait_semaphores;
-    submit_info.pWaitDstStageMask = wait_stages;
+    std::vector<VkSemaphore> wait_semaphores = { image_available_semaphores_[active_swapchain_image_] };
+    std::vector<VkPipelineStageFlags> wait_stages_mask = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+    std::vector<VkSemaphore> signal_semaphores = { render_finished_semaphores_[active_swapchain_image_] };
+
+    if (graphics_should_wait_for_compute_) {
+        wait_semaphores.push_back(compute_finished_semaphore_);
+        wait_stages_mask.push_back(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+
+        signal_semaphores.push_back(drawing_finished_sempahore_);
+        graphics_should_wait_for_compute_ = false;
+    }
+   
+    submit_info.waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size());
+    submit_info.pWaitSemaphores = wait_semaphores.data();
+    submit_info.pWaitDstStageMask = wait_stages_mask.data();
     submit_info.commandBufferCount = static_cast<uint32_t>(command_buffers.size());
     submit_info.pCommandBuffers = command_buffers.data();
+    submit_info.signalSemaphoreCount = static_cast<uint32_t>(signal_semaphores.size());
+    submit_info.pSignalSemaphores = signal_semaphores.data();
 
-    VkSemaphore signal_semaphores[] = { render_finished_semaphores_[current_frame_] };
-    submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = signal_semaphores;
+    vkResetFences(device_, 1, &in_flight_fences_[active_swapchain_image_]);
 
-    vkResetFences(device_, 1, &in_flight_fences_[current_frame_]);
-
-    VkResult result = vkQueueSubmit(graphics_queue_, 1, &submit_info, in_flight_fences_[current_frame_]);
+    VkResult result = vkQueueSubmit(graphics_queue_, 1, &submit_info, in_flight_fences_[active_swapchain_image_]);
     if (result != VK_SUCCESS) {
         std::cerr << "Failed to submit draw command buffer!" << std::endl;
         return result;
@@ -847,7 +875,7 @@ VkResult VulkanBackend::submitCommands(uint32_t swapchain_image, const std::vect
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = signal_semaphores;
+    present_info.pWaitSemaphores = &render_finished_semaphores_[active_swapchain_image_];
 
     VkSwapchainKHR swap_chains[] = { swap_chain_ };
     present_info.swapchainCount = 1;
@@ -865,7 +893,43 @@ VkResult VulkanBackend::submitCommands(uint32_t swapchain_image, const std::vect
         return result;
     }
 
-    current_frame_ = (current_frame_ + 1) % max_frames_in_flight_;
+    active_swapchain_image_ = (active_swapchain_image_ + 1) % max_frames_in_flight_;
+    ++current_frame_;
+
+    return result;
+}
+
+VkResult VulkanBackend::submitComputeCommands(const std::vector<VkCommandBuffer>& command_buffers) {
+    VkSubmitInfo submit_info{};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+    VkSemaphore wait_semaphores[] = { drawing_finished_sempahore_ };
+    VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT };
+
+    if (current_frame_ > 0) {
+        submit_info.waitSemaphoreCount = 1;
+        submit_info.pWaitSemaphores = wait_semaphores;
+        submit_info.pWaitDstStageMask = wait_stages;
+    } else {
+        // on the first frame don't wait for the graphics queue as it's not been dispatched yet
+        submit_info.waitSemaphoreCount = 0;
+        submit_info.pWaitSemaphores = nullptr;
+        submit_info.pWaitDstStageMask = nullptr;
+    }
+
+    submit_info.commandBufferCount = static_cast<uint32_t>(command_buffers.size());
+    submit_info.pCommandBuffers = command_buffers.data();
+
+    VkSemaphore signal_semaphores[] = { compute_finished_semaphore_ };
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = signal_semaphores;
+
+    graphics_should_wait_for_compute_ = true;
+    VkResult result = vkQueueSubmit(compute_queue_, 1, &submit_info, VK_NULL_HANDLE);
+    if (result != VK_SUCCESS) {
+        std::cerr << "Failed to submit compute command buffer!" << std::endl;
+        return result;
+    }
 
     return result;
 }
@@ -1059,6 +1123,7 @@ bool VulkanBackend::createLogicalDevice() {
     VkPhysicalDeviceFeatures device_features{};
     device_features.samplerAnisotropy = VK_TRUE;
     device_features.sampleRateShading = VK_TRUE;
+    device_features.geometryShader = VK_TRUE;
 
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -1082,6 +1147,7 @@ bool VulkanBackend::createLogicalDevice() {
     }
 
     vkGetDeviceQueue(device_, indices.graphics_family.value(), 0, &graphics_queue_);
+    vkGetDeviceQueue(device_, indices.graphics_family.value(), 0, &compute_queue_); // we have selected a family that supports both graphics and compute
     vkGetDeviceQueue(device_, indices.present_family.value(), 0, &present_queue_);
 
     return true;
@@ -1173,16 +1239,31 @@ bool VulkanBackend::createCommandPool() {
     return true;
 }
 
-bool VulkanBackend::createDescriptorPool(uint32_t buffer_count, uint32_t sampler_count, uint32_t max_sets) {
+bool VulkanBackend::createDescriptorPool(const DescriptorPoolConfig& config) {
+    auto max_sets = config.max_sets;
     if (max_sets == 0) {
-        max_sets = buffer_count * sampler_count * 2;
+        max_sets = (config.uniform_buffers_count + config.image_samplers_count + config.storage_texel_buffers_count) * 2;
     }
 
-    std::array<VkDescriptorPoolSize, 2> pool_sizes{};
-    pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    pool_sizes[0].descriptorCount = static_cast<uint32_t>(swap_chain_images_.size()) * buffer_count;
-    pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    pool_sizes[1].descriptorCount = static_cast<uint32_t>(swap_chain_images_.size()) * sampler_count;
+    std::vector<VkDescriptorPoolSize> pool_sizes{};
+    if (config.uniform_buffers_count > 0) {
+        VkDescriptorPoolSize uniform_pool;
+        uniform_pool.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uniform_pool.descriptorCount = config.uniform_buffers_count;
+        pool_sizes.push_back(uniform_pool);
+    }
+    if (config.image_samplers_count > 0) {
+        VkDescriptorPoolSize sampler_pool;
+        sampler_pool.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        sampler_pool.descriptorCount = config.image_samplers_count;
+        pool_sizes.push_back(sampler_pool);
+    }
+    if (config.storage_texel_buffers_count > 0) {
+        VkDescriptorPoolSize texel_pool;
+        texel_pool.type = VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER;
+        texel_pool.descriptorCount = config.storage_texel_buffers_count;
+        pool_sizes.push_back(texel_pool);
+    }
 
     VkDescriptorPoolCreateInfo pool_info{};
     pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1216,9 +1297,16 @@ bool VulkanBackend::createSyncObjects() {
             vkCreateSemaphore(device_, &semaphore_info, nullptr, &render_finished_semaphores_[i]) != VK_SUCCESS ||
             vkCreateFence(device_, &fence_info, nullptr, &in_flight_fences_[i]) != VK_SUCCESS) {
 
-            std::cerr << "Failed to create sync objects for frame " << i << "!" << std::endl;
+            std::cerr << "Failed to create graphics / present sync objects for frame " << i << "!" << std::endl;
             return false;
         }
+    }
+
+    if (vkCreateSemaphore(device_, &semaphore_info, nullptr, &compute_finished_semaphore_) != VK_SUCCESS ||
+        vkCreateSemaphore(device_, &semaphore_info, nullptr, &drawing_finished_sempahore_) != VK_SUCCESS) {
+
+        std::cerr << "Failed to create graphics / compute sync objects!" << std::endl;
+        return false;
     }
 
     return true;
@@ -1233,6 +1321,8 @@ void VulkanBackend::cleanupSwapChain() {
     }
 
     vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
+
+    current_frame_ = 0;
 }
 
 bool VulkanBackend::recreateSwapChain() {
@@ -1275,6 +1365,24 @@ void VulkanBackend::copyBufferToGpuLocalMemory(VkBuffer src_buffer, VkBuffer dst
     endSingleTimeCommands(command_buffer);
 }
 
+bool VulkanBackend::createBufferView(Buffer& buffer, VkFormat format) {
+    VkBufferViewCreateInfo buffer_view_info{};
+    buffer_view_info.sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO;
+    buffer_view_info.pNext = nullptr;
+    buffer_view_info.flags = 0;
+    buffer_view_info.buffer = buffer.vk_buffer;
+    buffer_view_info.format = format;
+    buffer_view_info.offset = 0;
+    buffer_view_info.range = VK_WHOLE_SIZE;
+
+    if (vkCreateBufferView(device_, &buffer_view_info, nullptr, &buffer.vk_buffer_view) != VK_SUCCESS) {
+        std::cerr << "Failed to create buffer view for buffer: " << buffer.name << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 void VulkanBackend::updateDescriptorSets(const UniformBuffer& buffer, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding) {
     for (size_t i = 0; i < descriptor_sets.size(); i++) {
         VkDescriptorBufferInfo buffer_info{};
@@ -1297,7 +1405,32 @@ void VulkanBackend::updateDescriptorSets(const UniformBuffer& buffer, std::vecto
     }
 }
 
+void VulkanBackend::updateDescriptorSets(const Buffer& buffer, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding) {
+    for (size_t i = 0; i < descriptor_sets.size(); i++) {
+        VkDescriptorBufferInfo buffer_info{};
+        buffer_info.buffer = buffer.vk_buffer;
+        buffer_info.offset = 0;
+        buffer_info.range = buffer.buffer_size;
+
+        VkWriteDescriptorSet descriptor_write{};
+        descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor_write.dstSet = descriptor_sets[i];
+        descriptor_write.dstBinding = binding;
+        descriptor_write.dstArrayElement = 0;
+        descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER;
+        descriptor_write.descriptorCount = 1;
+        descriptor_write.pBufferInfo = &buffer_info;
+        descriptor_write.pImageInfo = nullptr; // Optional
+        descriptor_write.pTexelBufferView = &buffer.vk_buffer_view;
+
+        vkUpdateDescriptorSets(device_, 1, &descriptor_write, 0, nullptr);
+    }
+}
+
 void VulkanBackend::destroyBuffer(Buffer& buffer) {
+    if (buffer.vk_buffer_view != VK_NULL_HANDLE) {
+        vkDestroyBufferView(device_, buffer.vk_buffer_view, nullptr);
+    }
     vkDestroyBuffer(device_, buffer.vk_buffer, nullptr);
     vkFreeMemory(device_, buffer.vk_buffer_memory, nullptr);
     buffer = Buffer{};
