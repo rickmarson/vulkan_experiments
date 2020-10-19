@@ -78,7 +78,15 @@ bool RainyAlley::loadAssets() {
 	shaders_[rain_geometry_shader->getName()] = std::move(rain_geometry_shader);
 	shaders_[rain_fragment_shader->getName()] = std::move(rain_fragment_shader);
 
-	rain_drops_emitter_ = ParticleEmitter::createParticleEmitter("rain_drops_emitter", &vulkan_backend_);
+	ParticleEmitterConfig emitter_config;
+	emitter_config.name = "rain_drops_emitter";
+	emitter_config.starting_transform = glm::identity<glm::mat4>();
+	emitter_config.min_box_extent = glm::vec3(-8.0f, -8.0, 0.0f);
+	emitter_config.max_box_extent = glm::vec3(8.0f, 8.0, 6.0f);
+	emitter_config.min_starting_velocity = glm::vec3(0.0f, 0.0f, -10.0f);
+	emitter_config.max_starting_velocity = glm::vec3(0.0f, 0.0f, 0.0f);
+
+	rain_drops_emitter_ = ParticleEmitter::createParticleEmitter(emitter_config, &vulkan_backend_);
 	rain_drops_emitter_->createParticles(1000, "shaders/rainfall_cp.spv");
 
 	auto extent = vulkan_backend_.getSwapChainExtent();
@@ -101,7 +109,7 @@ bool RainyAlley::setupScene() {
 	DescriptorPoolConfig pool_config;
 	pool_config.uniform_buffers_count = 2 * vulkan_backend_.getSwapChainSize();
 	pool_config.image_samplers_count = 2 * vulkan_backend_.getSwapChainSize();
-	pool_config.storage_texel_buffers_count = 1;
+	pool_config.storage_texel_buffers_count = 2;
 	vulkan_backend_.createDescriptorPool(pool_config);
 
 	RenderPassConfig render_pass_config;

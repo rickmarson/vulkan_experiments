@@ -155,6 +155,7 @@ private:
     bool createImageViews();
     bool createCommandPool();
     bool createSyncObjects();
+    void destroySyncObjects();
 
     void cleanupSwapChain();
 

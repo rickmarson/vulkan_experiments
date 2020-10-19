@@ -267,15 +267,6 @@ bool VulkanBackend::startUp() {
 void VulkanBackend::shutDown() {
     cleanupSwapChain();
     
-    for (uint32_t i = 0; i < max_frames_in_flight_; i++) {
-        vkDestroySemaphore(device_, render_finished_semaphores_[i], nullptr);
-        vkDestroySemaphore(device_, image_available_semaphores_[i], nullptr);
-        vkDestroyFence(device_, in_flight_fences_[i], nullptr);
-    }
-
-    vkDestroySemaphore(device_, compute_finished_semaphore_, nullptr);
-    vkDestroySemaphore(device_, drawing_finished_sempahore_, nullptr);
-
     if (timestampQueriesEnabled()) {
         vkDestroyQueryPool(device_, timestamp_queries_pool_, nullptr);
     }
@@ -809,25 +800,6 @@ VkResult VulkanBackend::startNextFrame(uint32_t& swapchain_image, bool window_re
     if (needs_rebuilding) {
         std::cerr << "Swapchain is out of date. Rebuilding..." << std::endl;
     }
-    if (error || needs_rebuilding) {
-        // clear the image semaphore as we won't be submitting the queue that waits for it this frame
-        vkDestroySemaphore(device_, image_available_semaphores_[active_swapchain_image_], nullptr);
-        // reset the compute sync semaphores
-        vkDestroySemaphore(device_, drawing_finished_sempahore_, nullptr);
-        vkDestroySemaphore(device_, compute_finished_semaphore_, nullptr);
-
-        VkSemaphoreCreateInfo semaphore_info{};
-        semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-        if (vkCreateSemaphore(device_, &semaphore_info, nullptr, &image_available_semaphores_[active_swapchain_image_]) != VK_SUCCESS) {
-            std::cerr << "Failed to reset the semaphore for swapchain image " << active_swapchain_image_ << std::endl;
-        } 
-        if (vkCreateSemaphore(device_, &semaphore_info, nullptr, &drawing_finished_sempahore_) != VK_SUCCESS) {
-            std::cerr << "Failed to reset the drawing finished semaphore" << active_swapchain_image_ << std::endl;
-        }
-        if (vkCreateSemaphore(device_, &semaphore_info, nullptr, &compute_finished_semaphore_) != VK_SUCCESS) {
-            std::cerr << "Failed to reset the compute finished semaphore" << active_swapchain_image_ << std::endl;
-        }
-    }
 
     return result;
 }
@@ -1312,6 +1284,22 @@ bool VulkanBackend::createSyncObjects() {
     return true;
 }
 
+void VulkanBackend::destroySyncObjects() {
+    for (uint32_t i = 0; i < max_frames_in_flight_; i++) {
+        vkDestroySemaphore(device_, image_available_semaphores_[i], nullptr);
+        vkDestroySemaphore(device_, render_finished_semaphores_[i], nullptr);
+        vkDestroyFence(device_, in_flight_fences_[i], nullptr);
+    }
+
+    vkDestroySemaphore(device_, compute_finished_semaphore_, nullptr);
+    vkDestroySemaphore(device_, drawing_finished_sempahore_, nullptr);
+    graphics_should_wait_for_compute_ = false;
+    image_available_semaphores_.clear();
+    render_finished_semaphores_.clear();
+    in_flight_fences_.clear();
+    images_in_flight_.clear();
+}
+
 void VulkanBackend::cleanupSwapChain() {
 
     vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
@@ -1322,12 +1310,17 @@ void VulkanBackend::cleanupSwapChain() {
 
     vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
 
+    destroySyncObjects();
     current_frame_ = 0;
+    graphics_should_wait_for_compute_ = false;
 }
 
 bool VulkanBackend::recreateSwapChain() {
     cleanupSwapChain();
 
+    if (!createSyncObjects()) {
+        return false;
+    }
     if (!createSwapChain()) {
         return false;
     }

@@ -4,6 +4,7 @@
 layout(local_size_x = 32) in;
 
 layout(set = 0, binding = 0, rgba32f) uniform imageBuffer particle_buffer;
+layout(set = 0, binding = 1, rgba32f) uniform imageBuffer respawn_buffer;
 
 layout(push_constant) uniform GlobalState {
     uint particles_count;
@@ -22,8 +23,8 @@ void main() {
         pos = vec4(pos.xyz, 1.0) + vel * global_state.delta_time;
 
         if (pos.z < -5.0) {
-            vel = vec4(0.0, 0.0, 0.0, 0.0);
-            pos.z = 5.0f;
+            pos = imageLoad(respawn_buffer, particle_idx);
+            vel = imageLoad(respawn_buffer, particle_idx + 1);
         }
 
         imageStore(particle_buffer, particle_idx, pos);

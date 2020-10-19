@@ -138,6 +138,7 @@ const std::string DIFFUSE_SAMPLER_BINDING_NAME = "diffuse_sampler";  // holds th
 
 const uint32_t COMPUTE_PARTICLE_BUFFER_SET_ID = 0;
 const std::string COMPUTE_PARTICLE_BUFFER_BINDING_NAME = "particle_buffer";
+const std::string COMPUTE_RESPAWN_BUFFER_BINDING_NAME = "respawn_buffer";
 
 struct ParticlesGlobalState {
     uint32_t particles_count = 0;

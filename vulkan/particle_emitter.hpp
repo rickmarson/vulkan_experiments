@@ -13,20 +13,29 @@ class Texture;
 class VulkanBackend;
 class ShaderModule;
 
+struct ParticleEmitterConfig {
+	std::string name;
+	glm::mat4 starting_transform;
+	glm::vec3 min_box_extent;
+	glm::vec3 max_box_extent;
+	glm::vec3 min_starting_velocity;
+	glm::vec3 max_starting_velocity;
+};
+
 class ParticleEmitter {
 public:
-	static std::shared_ptr<ParticleEmitter> createParticleEmitter(const std::string& name, VulkanBackend* backend);
+	static std::shared_ptr<ParticleEmitter> createParticleEmitter(const ParticleEmitterConfig& config, VulkanBackend* backend);
 
-	explicit ParticleEmitter(const std::string& name, VulkanBackend* backend);
+	explicit ParticleEmitter(const ParticleEmitterConfig& config, VulkanBackend* backend);
 	~ParticleEmitter();
 
-	const std::string& getName() const { return name_; }
+	const std::string& getName() const { return config_.name; }
 	
 	void setTransform(const glm::mat4& transform);
 	RecordCommandsResult update(float delta_time_s);
 
 	bool createParticles(uint32_t count, const std::string& shader_file);
-	const Buffer& getVertexBuffer() const { return vertex_buffer_; }
+	const Buffer& getVertexBuffer() const { return particle_buffer_; }
 	uint32_t getVertexCount() const { return global_state_pc_.particles_count; }
 	
 	void createUniformBuffer();
@@ -45,10 +54,11 @@ private:
 	void updateComputeDescriptorSets(const DescriptorSetMetadata& metadata);
 	RecordCommandsResult recordComputeCommands();
 
-	std::string name_;
+	ParticleEmitterConfig config_;
 
 	VulkanBackend* backend_;
-	Buffer vertex_buffer_;
+	Buffer particle_buffer_;
+	Buffer particle_respawn_buffer_;
 	std::shared_ptr<Texture> texture_;
 
 	ModelData model_data_;
