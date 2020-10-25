@@ -40,6 +40,7 @@ public:
 	
 	void createUniformBuffer();
 	void deleteUniformBuffer();
+	DescriptorPoolConfig getDescriptorsCount() const;
 	void createGraphicsDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
 	void updateGraphicsDescriptorSets(const DescriptorSetMetadata& metadata);
 	std::vector<VkDescriptorSet>& getGraphicsDescriptorSets() { return vk_descriptor_sets_graphics_; }

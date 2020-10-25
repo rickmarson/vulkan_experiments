@@ -106,7 +106,20 @@ bool ModelViewer::setupScene() {
 	render_pass_config.name = "Main Pass";
 	render_pass_config.msaa_samples = vulkan_backend_.getMaxMSAASamples();
 	render_pass_config.store_depth = false;
-	render_pass_config.enable_overlays = true;
+	
+	SubpassConfig model_subpass;
+	model_subpass.use_colour_attachment = true;
+	model_subpass.use_depth_stencil_attachemnt = true;
+	model_subpass.src_dependency = SubpassConfig::Dependency::NONE;
+	model_subpass.dst_dependency = SubpassConfig::Dependency::COLOUR_ATTACHMENT;
+
+	SubpassConfig ui_subpass;
+	ui_subpass.use_colour_attachment = true;
+	ui_subpass.use_depth_stencil_attachemnt = false;
+	ui_subpass.src_dependency = SubpassConfig::Dependency::COLOUR_ATTACHMENT;
+	ui_subpass.dst_dependency = SubpassConfig::Dependency::NONE;
+
+	render_pass_config.subpasses = { model_subpass, ui_subpass };
 
 	render_pass_ = vulkan_backend_.createRenderPass(render_pass_config);
 

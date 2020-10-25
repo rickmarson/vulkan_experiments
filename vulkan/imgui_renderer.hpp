@@ -29,6 +29,7 @@ public:
 
 	bool createGraphicsPipeline(RenderPass& render_pass, uint32_t subpass_number);
 	void cleanupGraphicsPipeline();
+	DescriptorPoolConfig getDescriptorsCount() const;
 
 	void beginFrame();
 	void endFrame();

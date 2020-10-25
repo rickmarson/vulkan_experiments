@@ -175,6 +175,12 @@ void ImGuiRenderer::cleanupGraphicsPipeline() {
     vulkan_backend_->destroyPipeline(ui_pipeline_);
 }
 
+DescriptorPoolConfig ImGuiRenderer::getDescriptorsCount() const {
+    DescriptorPoolConfig config;
+    config.image_samplers_count = 1;
+    return config;
+}
+
 void ImGuiRenderer::beginFrame() {
     ImGuiIO& io = ImGui::GetIO();
    

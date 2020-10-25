@@ -39,11 +39,9 @@ private:
 
 	std::map<std::string, std::shared_ptr<ShaderModule>> shaders_;
 	std::shared_ptr<ParticleEmitter> rain_drops_emitter_;
-	// std::map<std::string, std::shared_ptr<Mesh>> meshes_;
 	std::unique_ptr<SceneManager> scene_manager_;
-	RenderPass alley_render_pass_;
-	RenderPass rain_render_pass_;
-	// Pipeline alley_graphics_pipeline_;
+	RenderPass render_pass_;
+	Pipeline alley_graphics_pipeline_;
 	Pipeline rain_graphics_pipeline_;
 
 	// options
@@ -55,6 +53,25 @@ private:
 bool RainyAlley::loadAssets() {
 	graphics_command_buffers_ = vulkan_backend_.createPrimaryCommandBuffers(vulkan_backend_.getSwapChainSize());
 	
+	auto alley_vertex_shader = vulkan_backend_.createShaderModule("alley_vs");
+	alley_vertex_shader->loadSpirvShader("shaders/alley_vs.spv");
+
+	if (!alley_vertex_shader->isVertexFormatCompatible(Vertex::getFormatInfo())) {
+		std::cerr << "Vertex format is not compatible with pipeline input for " << alley_vertex_shader->getName() << std::endl;
+		return false;
+	}
+
+	auto alley_fragment_shader = vulkan_backend_.createShaderModule("alley_fs");
+	alley_fragment_shader->loadSpirvShader("shaders/alley_fs.spv");
+
+	if (!alley_vertex_shader->isValid() || !alley_fragment_shader->isValid()) {
+		std::cerr << "Failed to validate rain drops shaders!" << std::endl;
+		return false;
+	}
+
+	shaders_[alley_vertex_shader->getName()] = std::move(alley_vertex_shader);
+	shaders_[alley_fragment_shader->getName()] = std::move(alley_fragment_shader);
+
 	auto rain_vertex_shader = vulkan_backend_.createShaderModule("rain_drops_vs");
 	rain_vertex_shader->loadSpirvShader("shaders/rain_drops_vs.spv");
 
@@ -82,7 +99,7 @@ bool RainyAlley::loadAssets() {
 	emitter_config.name = "rain_drops_emitter";
 	emitter_config.starting_transform = glm::identity<glm::mat4>();
 	emitter_config.min_box_extent = glm::vec3(-8.0f, -8.0, 0.0f);
-	emitter_config.max_box_extent = glm::vec3(8.0f, 8.0, 6.0f);
+	emitter_config.max_box_extent = glm::vec3(8.0f, 8.0, 12.0f);
 	emitter_config.min_starting_velocity = glm::vec3(0.0f, 0.0f, -10.0f);
 	emitter_config.max_starting_velocity = glm::vec3(0.0f, 0.0f, 0.0f);
 
@@ -94,6 +111,8 @@ bool RainyAlley::loadAssets() {
 	scene_manager_->setCameraProperties(90.0f, extent.width / (float)extent.height, 0.1f, 10.0f);
 	scene_manager_->setCameraPosition(glm::vec3(-1.0f, -1.0f, 0.0f));
 	scene_manager_->setCameraTarget(glm::vec3(2.0f, 2.0f, 2.0f));
+
+	scene_manager_->loadFromGlb("meshes/alley.glb");
 
 	imgui_renderer_ = ImGuiRenderer::create(&vulkan_backend_);
 	imgui_renderer_->setUp(window_);
@@ -107,27 +126,55 @@ bool RainyAlley::loadAssets() {
 
 bool RainyAlley::setupScene() {
 	DescriptorPoolConfig pool_config;
-	pool_config.uniform_buffers_count = 2 * vulkan_backend_.getSwapChainSize();
-	pool_config.image_samplers_count = 2 * vulkan_backend_.getSwapChainSize();
-	pool_config.storage_texel_buffers_count = 2;
+
+	auto scene_pool = scene_manager_->getDescriptorsCount();
+	auto emitter_pool = rain_drops_emitter_->getDescriptorsCount();
+	auto ui_pool = imgui_renderer_->getDescriptorsCount();
+	
+	pool_config.uniform_buffers_count = scene_pool.uniform_buffers_count + emitter_pool.uniform_buffers_count + ui_pool.uniform_buffers_count;
+	pool_config.image_samplers_count = scene_pool.image_samplers_count + emitter_pool.image_samplers_count + ui_pool.image_samplers_count;
+	pool_config.storage_texel_buffers_count = emitter_pool.storage_texel_buffers_count;
+
+	pool_config.uniform_buffers_count *= vulkan_backend_.getSwapChainSize();
+	pool_config.image_samplers_count *= vulkan_backend_.getSwapChainSize();
+	
 	vulkan_backend_.createDescriptorPool(pool_config);
 
 	RenderPassConfig render_pass_config;
-	render_pass_config.name = "Rain Drops Pass";
+	render_pass_config.name = "Main Pass";
 	render_pass_config.msaa_samples = vulkan_backend_.getMaxMSAASamples();
 	render_pass_config.store_depth = false;
-	render_pass_config.enable_overlays = true;
+	
+	SubpassConfig alley_subpass;
+	alley_subpass.use_colour_attachment = true;
+	alley_subpass.use_depth_stencil_attachemnt = true;
+	alley_subpass.src_dependency = SubpassConfig::Dependency::NONE;
+	alley_subpass.dst_dependency = SubpassConfig::Dependency::COLOUR_ATTACHMENT;
 
-	rain_render_pass_ = vulkan_backend_.createRenderPass(render_pass_config);
+	SubpassConfig rain_subpass;
+	rain_subpass.use_colour_attachment = true;
+	rain_subpass.use_depth_stencil_attachemnt = true;
+	rain_subpass.src_dependency = SubpassConfig::Dependency::COLOUR_ATTACHMENT;
+	rain_subpass.dst_dependency = SubpassConfig::Dependency::COLOUR_ATTACHMENT;
 
-	if (rain_render_pass_.vk_render_pass == VK_NULL_HANDLE) {
+	SubpassConfig ui_subpass;
+	ui_subpass.use_colour_attachment = true;
+	ui_subpass.use_depth_stencil_attachemnt = false;
+	ui_subpass.src_dependency = SubpassConfig::Dependency::COLOUR_ATTACHMENT;
+	ui_subpass.dst_dependency = SubpassConfig::Dependency::NONE;
+ 
+	render_pass_config.subpasses = { alley_subpass, rain_subpass, ui_subpass };
+
+	render_pass_ = vulkan_backend_.createRenderPass(render_pass_config);
+
+	if (render_pass_.vk_render_pass == VK_NULL_HANDLE) {
 		return false;
 	}
 
 	if (!createGraphicsPipeline()) {
 		return false;
 	}
-	if (!imgui_renderer_->createGraphicsPipeline(rain_render_pass_, 1)) {
+	if (!imgui_renderer_->createGraphicsPipeline(render_pass_, 2)) {
 		return false;
 	}
 
@@ -143,7 +190,8 @@ void RainyAlley::cleanupSwapChainAssets() {
 	
 	rain_drops_emitter_->deleteUniformBuffer();
 
-	vulkan_backend_.destroyRenderPass(rain_render_pass_);
+	vulkan_backend_.destroyRenderPass(render_pass_);
+	vulkan_backend_.destroyPipeline(alley_graphics_pipeline_);
 	vulkan_backend_.destroyPipeline(rain_graphics_pipeline_);
 }
 
@@ -152,6 +200,7 @@ void RainyAlley::cleanup() {
 	imgui_renderer_->shutDown();
 	vulkan_backend_.freeCommandBuffers(graphics_command_buffers_);
 	rain_drops_emitter_.reset();
+	scene_manager_.reset();
 	shaders_.clear();
 }
 
@@ -190,7 +239,23 @@ bool RainyAlley::createGraphicsPipeline() {
 }
 
 bool RainyAlley::createAlleyGraphicsPipeline() {
-	return true;
+	GraphicsPipelineConfig config;
+	config.name = "Alley Geometry";
+	config.vertex = shaders_["alley_vs"];
+	config.fragment = shaders_["alley_fs"];
+	config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	config.vertex_buffer_binding_desc = shaders_["alley_vs"]->getInputBindingDescription();
+	config.vertex_buffer_attrib_desc = shaders_["alley_vs"]->getInputAttributes();
+	config.render_pass = render_pass_;
+	config.subpass_number = 0;
+
+	alley_graphics_pipeline_ = vulkan_backend_.createGraphicsPipeline(config);
+
+	scene_manager_->createUniformBuffer();
+	scene_manager_->createDescriptorSets(alley_graphics_pipeline_.vk_descriptor_set_layouts);
+	scene_manager_->updateDescriptorSets(alley_graphics_pipeline_.descriptor_metadata);
+
+	return alley_graphics_pipeline_.vk_pipeline != VK_NULL_HANDLE;
 }
 
 bool RainyAlley::createRainDropsPipeline() {
@@ -202,14 +267,12 @@ bool RainyAlley::createRainDropsPipeline() {
 	config.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
 	config.vertex_buffer_binding_desc = shaders_["rain_drops_vs"]->getInputBindingDescription();
 	config.vertex_buffer_attrib_desc = shaders_["rain_drops_vs"]->getInputAttributes();
-	config.render_pass = rain_render_pass_;
-	config.subpass_number = 0;
+	config.render_pass = render_pass_;
+	config.subpass_number = 1;
+	config.enableDepthTesting = true;
+	config.enableTransparency = true;
 
 	rain_graphics_pipeline_ = vulkan_backend_.createGraphicsPipeline(config);
-
-	scene_manager_->createUniformBuffer();
-	scene_manager_->createDescriptorSets(rain_graphics_pipeline_.vk_descriptor_set_layouts);
-	scene_manager_->updateDescriptorSets(rain_graphics_pipeline_.descriptor_metadata);
 
 	rain_drops_emitter_->createUniformBuffer();
 	rain_drops_emitter_->createGraphicsDescriptorSets(rain_graphics_pipeline_.vk_descriptor_set_layouts);
@@ -239,8 +302,8 @@ RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
 
 	VkRenderPassBeginInfo render_pass_info{};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	render_pass_info.renderPass = rain_render_pass_.vk_render_pass;
-	render_pass_info.framebuffer = rain_render_pass_.swap_chain_framebuffers[swapchain_image];
+	render_pass_info.renderPass = render_pass_.vk_render_pass;
+	render_pass_info.framebuffer = render_pass_.swap_chain_framebuffers[swapchain_image];
 	render_pass_info.renderArea.offset = { 0, 0 };
 	render_pass_info.renderArea.extent = vulkan_backend_.getSwapChainExtent();
 
@@ -252,13 +315,19 @@ RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
 	render_pass_info.pClearValues = clear_values.data();
 
 	vkCmdBeginRenderPass(command_buffers[0], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, rain_graphics_pipeline_.vk_pipeline);
 
 	VkDeviceSize offsets[] = { 0 };
 	auto& scene_descriptors = scene_manager_->getDescriptorSets();
+	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, alley_graphics_pipeline_.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &scene_descriptors[swapchain_image], 0, nullptr);
 
-	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, rain_graphics_pipeline_.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &scene_descriptors[swapchain_image], 0, nullptr);
-	
+	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, alley_graphics_pipeline_.vk_pipeline);
+
+	scene_manager_->drawGeometry(command_buffers[0], alley_graphics_pipeline_.vk_pipeline_layout, swapchain_image);
+
+	vkCmdNextSubpass(command_buffers[0], VK_SUBPASS_CONTENTS_INLINE);
+
+	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, rain_graphics_pipeline_.vk_pipeline);
+
 	auto& particles_descriptors = rain_drops_emitter_->getGraphicsDescriptorSets();
 	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, rain_graphics_pipeline_.vk_pipeline_layout, MODEL_UNIFORM_SET_ID, 1, &particles_descriptors[swapchain_image], 0, nullptr);
 

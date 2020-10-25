@@ -8,6 +8,7 @@
 #include "shader_module.hpp"
 #include "texture.hpp"
 #include "mesh.hpp"
+#include "static_mesh.hpp"
 
 #include <optional>
 #include <algorithm>
@@ -303,6 +304,10 @@ std::shared_ptr<Mesh> VulkanBackend::createMesh(const std::string& name) {
     return Mesh::createMesh(name, this);
 }
 
+std::shared_ptr<StaticMesh> VulkanBackend::createStaticMesh(const std::string& name) {
+    return StaticMesh::createStaticMesh(name, this);
+}
+
 std::vector<VkCommandBuffer> VulkanBackend::createPrimaryCommandBuffers(uint32_t count) const {
     std::vector<VkCommandBuffer> cmd_buffers(count);
 
@@ -405,42 +410,67 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
 
     std::vector<VkSubpassDescription> subpasses;
     std::vector<VkSubpassDependency> subpass_dependencies;
-    auto subpass_count = config.enable_overlays ? 2 : 1;
+    auto subpass_count = config.subpasses.size();
     subpasses.resize(subpass_count);
     subpass_dependencies.resize(subpass_count);
-    
-    subpasses[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpasses[0].colorAttachmentCount = 1;
-    subpasses[0].pColorAttachments = &color_attachment_ref;
-    subpasses[0].pDepthStencilAttachment = &depth_attachment_ref;
 
-    if (!config.enable_overlays) {
-        subpasses[0].pResolveAttachments = &color_attachment_resolve_ref;
-    }
-    else {
-        subpasses[0].pResolveAttachments = nullptr;
-    }
+    for (auto i = 0; i < subpass_count; ++i) {
+        auto& sub = config.subpasses[i];
+        subpasses[i].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpasses[i].colorAttachmentCount = sub.use_colour_attachment ? 1 : 0;
+        subpasses[i].pColorAttachments = sub.use_colour_attachment ? &color_attachment_ref : nullptr;
+        subpasses[i].pDepthStencilAttachment = sub.use_depth_stencil_attachemnt ? &depth_attachment_ref : nullptr;
 
-    subpass_dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-    subpass_dependencies[0].dstSubpass = config.enable_overlays ? 1 : 0;
-    subpass_dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpass_dependencies[0].srcAccessMask = 0;
-    subpass_dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpass_dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        if (i == config.subpasses.size() - 1) {
+            subpasses[i].pResolveAttachments = &color_attachment_resolve_ref;
+        } else {
+            subpasses[i].pResolveAttachments = nullptr;
+        }
 
-    if (config.enable_overlays) {
-        subpasses[1].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        subpasses[1].colorAttachmentCount = 1;
-        subpasses[1].pColorAttachments = &color_attachment_ref;
-        subpasses[1].pDepthStencilAttachment = nullptr;
-        subpasses[1].pResolveAttachments = &color_attachment_resolve_ref;
+        uint32_t src_subpass;
+        uint32_t dst_subpass;
 
-        subpass_dependencies[1].srcSubpass = 0;
-        subpass_dependencies[1].dstSubpass = 1;
-        subpass_dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        subpass_dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        subpass_dependencies[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        subpass_dependencies[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        if (i == 0) {
+            src_subpass = VK_SUBPASS_EXTERNAL;
+            dst_subpass = 0;
+        } else {
+            src_subpass = i - 1;
+            dst_subpass = i;
+        }
+      
+        VkPipelineStageFlags src_stage;
+        VkPipelineStageFlags dst_stage;
+        VkAccessFlags src_access;
+        VkAccessFlags dst_access;
+
+        switch (sub.src_dependency) {
+            case SubpassConfig::Dependency::NONE:
+                src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                src_access = 0;
+                break;
+            case SubpassConfig::Dependency::COLOUR_ATTACHMENT:
+                src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                src_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                break;
+        }
+
+        switch (sub.dst_dependency) {
+            case SubpassConfig::Dependency::NONE:
+                dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                dst_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                break;
+            case SubpassConfig::Dependency::COLOUR_ATTACHMENT:
+                dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                dst_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                break;
+        }
+     
+        subpass_dependencies[i].srcSubpass = src_subpass;
+        subpass_dependencies[i].dstSubpass = dst_subpass;
+        subpass_dependencies[i].srcStageMask = src_stage;
+        subpass_dependencies[i].srcAccessMask = src_access;
+        subpass_dependencies[i].dstStageMask = dst_stage;
+        subpass_dependencies[i].dstAccessMask = dst_access;
     }
 
     std::array<VkAttachmentDescription, 3> attachments = { color_attachment, depth_attachment, color_attachment_resolve };
@@ -1424,8 +1454,12 @@ void VulkanBackend::destroyBuffer(Buffer& buffer) {
     if (buffer.vk_buffer_view != VK_NULL_HANDLE) {
         vkDestroyBufferView(device_, buffer.vk_buffer_view, nullptr);
     }
-    vkDestroyBuffer(device_, buffer.vk_buffer, nullptr);
-    vkFreeMemory(device_, buffer.vk_buffer_memory, nullptr);
+    if (buffer.vk_buffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device_, buffer.vk_buffer, nullptr);
+    }
+    if (buffer.vk_buffer_memory != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, buffer.vk_buffer_memory, nullptr);
+    }
     buffer = Buffer{};
 }
 

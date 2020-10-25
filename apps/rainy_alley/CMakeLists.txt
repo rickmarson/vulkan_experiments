@@ -11,15 +11,15 @@ add_dependencies(rainy_alley glfw tinyobjloader imgui vulkan shaders)
 
 target_link_libraries(rainy_alley ${Vulkan_LIBRARIES} vulkan glfw tinyobjloader imgui)
 
-file(GLOB SHADERS "${CMAKE_SOURCE_DIR}/shaders/rain_drops_vs.spv"
+file(GLOB SHADERS "${CMAKE_SOURCE_DIR}/shaders/alley_vs.spv"
+                  "${CMAKE_SOURCE_DIR}/shaders/alley_fs.spv"
+                  "${CMAKE_SOURCE_DIR}/shaders/rain_drops_vs.spv"
                   "${CMAKE_SOURCE_DIR}/shaders/rain_drops_gm.spv"
                   "${CMAKE_SOURCE_DIR}/shaders/rain_drops_fs.spv"
                   "${CMAKE_SOURCE_DIR}/shaders/rainfall_cp.spv")
 set(SHADERS ${SHADERS} ${IMGUI_SHADERS})
 
-# file(GLOB OBJECTS "${CMAKE_SOURCE_DIR}/meshes/viking_room.obj" 
-#                   "${CMAKE_SOURCE_DIR}/meshes/viking_room.mtl")
-# file(GLOB TEXTURES "${CMAKE_SOURCE_DIR}/textures/viking_room.png")
+file(GLOB OBJECTS "${CMAKE_SOURCE_DIR}/meshes/alley.glb")
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/shaders/)
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/meshes/)

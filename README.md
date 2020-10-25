@@ -31,6 +31,7 @@ This is essentially a fresh re-implementation of the Vulkan Tutorial to test the
 - [imgui](https://github.com/ocornut/imgui.git)
 - [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader.git)
 - [stb](https://github.com/nothings/stb.git)
+- [tinygltf](https://github.com/syoyo/tinygltf)
 - [SPIRV-Reflect](https://github.com/KhronosGroup/SPIRV-Reflect.git)
 
 ## Compatibility 

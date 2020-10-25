@@ -12,12 +12,22 @@
 class ShaderModule;
 class Texture;
 class Mesh;
+class StaticMesh;
+
+struct SubpassConfig {
+    enum class Dependency { NONE =0, COLOUR_ATTACHMENT };
+
+    bool use_colour_attachment = false;
+    bool use_depth_stencil_attachemnt = false;
+    Dependency src_dependency = Dependency::NONE;
+    Dependency dst_dependency = Dependency::NONE;
+};
 
 struct RenderPassConfig {
     std::string name;
     VkSampleCountFlagBits msaa_samples = VK_SAMPLE_COUNT_1_BIT;
     bool store_depth = false;
-    bool enable_overlays = false;
+    std::vector<SubpassConfig> subpasses;
 };
 
 struct GraphicsPipelineConfig {
@@ -46,13 +56,6 @@ struct GraphicsPipelineConfig {
 
     RenderPass render_pass;
     uint32_t subpass_number = 0;
-};
-
-struct DescriptorPoolConfig {
-    uint32_t uniform_buffers_count = 0;
-    uint32_t image_samplers_count = 0;
-    uint32_t storage_texel_buffers_count = 0;
-    uint32_t max_sets = 0;
 };
 
 struct ComputePipelineConfig {
@@ -89,6 +92,7 @@ public:
     std::shared_ptr<ShaderModule> createShaderModule(const std::string& name) const;
     std::shared_ptr<Texture> createTexture(const std::string& name);
     std::shared_ptr<Mesh> createMesh(const std::string& name);
+    std::shared_ptr<StaticMesh> createStaticMesh(const std::string& name);
 
     bool createDescriptorPool(const DescriptorPoolConfig& config);
     std::vector<VkCommandBuffer> createPrimaryCommandBuffers(uint32_t count) const; // the caller is responsible for managing these

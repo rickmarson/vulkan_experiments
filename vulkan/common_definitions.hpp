@@ -29,6 +29,15 @@
 using VertexFormatInfo = std::pair<size_t, std::vector<size_t>>;
 class Texture;
 
+struct Material {
+    std::weak_ptr<Texture> diffuse_texture;
+    std::weak_ptr<Texture> normal_texture;
+    std::weak_ptr<Texture> occlusion_texture;
+    std::weak_ptr<Texture> emissive_texture;
+    glm::vec4 diffuse_factor = glm::vec4(1.0f);
+    glm::vec4 emissive_factor = glm::vec4(1.0f);
+};
+
 struct Buffer {
     std::string name;
     bool host_visible = false;
@@ -45,6 +54,13 @@ struct UniformBuffer {
     size_t buffer_size = 0;
 
     std::vector<Buffer> buffers;  // one per command buffer / swap chain image
+};
+
+struct DescriptorPoolConfig {
+    uint32_t uniform_buffers_count = 0;
+    uint32_t image_samplers_count = 0;
+    uint32_t storage_texel_buffers_count = 0;
+    uint32_t max_sets = 0;
 };
 
 struct SwapChainSupportDetails {
@@ -125,15 +141,17 @@ struct SceneData {
     glm::mat4 proj;
 };
 
-const uint32_t SCENE_UNIFORM_SET_ID = 0;
+const uint32_t SCENE_UNIFORM_SET_ID = 0;  // all scene-wide uniforms (lights, camera, etc.)
 const std::string SCENE_DATA_BINDING_NAME = "scene";  // holds scene-wide information (view, projection, lights, etc..)
 
 struct ModelData {
     glm::mat4 transform_matrix;
 };
 
-const uint32_t MODEL_UNIFORM_SET_ID = 1;
+const uint32_t MODEL_UNIFORM_SET_ID = 1;  // all uniforms that apply to one object (rotation, translation, etc...)
 const std::string MODEL_DATA_BINDING_NAME = "model";  // holds model-specific numeric data (model transform, etc...)
+
+const uint32_t SURFACE_UNIFORM_SET_ID = 2;  // all samplers that apply to one surface (one object can have multiple surfaces)
 const std::string DIFFUSE_SAMPLER_BINDING_NAME = "diffuse_sampler";  // holds the diffuse texture of the surface / mesh being drawn
 
 const uint32_t COMPUTE_PARTICLE_BUFFER_SET_ID = 0;

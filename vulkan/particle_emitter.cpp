@@ -122,6 +122,13 @@ void ParticleEmitter::deleteUniformBuffer() {
     backend_->destroyUniformBuffer(uniform_buffer_);
 }
 
+DescriptorPoolConfig ParticleEmitter::getDescriptorsCount() const {
+    DescriptorPoolConfig config;
+    config.uniform_buffers_count = 1;
+    config.storage_texel_buffers_count = 2;
+    return config;
+}
+
 void ParticleEmitter::createGraphicsDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {
     const auto& layout = descriptor_set_layouts.find(MODEL_UNIFORM_SET_ID)->second;
     std::vector<VkDescriptorSetLayout> layouts(backend_->getSwapChainSize(), layout);

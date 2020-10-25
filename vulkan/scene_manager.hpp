@@ -10,7 +10,12 @@
 #include "common_definitions.hpp"
 
 class VulkanBackend;
+class Texture;
+class StaticMesh;
 
+/*
+* Lights, Cameras and Static Environment geometry
+*/
 class SceneManager {
 public:
 	static std::unique_ptr<SceneManager> create(VulkanBackend* backend);
@@ -18,9 +23,19 @@ public:
 	explicit SceneManager(VulkanBackend* backend);
 	~SceneManager();
 
-	void setCameraProperties(float fov, float aspect_ratio, float z_near, float z_far);
+	bool loadFromGlb(const std::string& file_path);
+	std::shared_ptr<StaticMesh> addObject(const std::string& name);
+
+	void setCameraProperties(float fov_deg, float aspect_ratio, float z_near, float z_far);
 	void setCameraPosition(const glm::vec3& pos);
 	void setCameraTarget(const glm::vec3& target);
+	void setCameraTransform(const glm::mat4 transform);
+
+	DescriptorPoolConfig getDescriptorsCount() const;
+	std::shared_ptr<StaticMesh> getMeshByIndex(uint32_t idx);
+	std::shared_ptr<StaticMesh> getMeshByName(const std::string& name);
+	std::shared_ptr<Texture> getTexture(uint32_t idx);
+	std::shared_ptr<Material> getMaterial(uint32_t idx);
 
 	void update();
 
@@ -30,11 +45,19 @@ public:
 	void updateDescriptorSets(const DescriptorSetMetadata& metadata);
 	std::vector<VkDescriptorSet>& getDescriptorSets() { return vk_descriptor_sets_; }
 
+	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index);
+
 private:
 	VulkanBackend* backend_;
 	SceneData scene_data_;
 	UniformBuffer uniform_buffer_;
 	std::vector<VkDescriptorSet> vk_descriptor_sets_;
+
+	Buffer scene_vertex_buffer_;
+	Buffer scene_index_buffer_;
+	std::vector<std::shared_ptr<Texture>> textures_;
+	std::vector<std::shared_ptr<Material>> materials_;
+	std::vector<std::shared_ptr<StaticMesh>> meshes_;
 
 	glm::vec3 camera_position_;
 	glm::vec3 camera_look_at_;

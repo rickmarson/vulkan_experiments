@@ -16,3 +16,6 @@
 [submodule "utilities/imgui"]
 	path = utilities/imgui
 	url = https://github.com/ocornut/imgui.git
+[submodule "utilities/tinygltf"]
+	path = utilities/tinygltf
+	url = https://github.com/syoyo/tinygltf.git
