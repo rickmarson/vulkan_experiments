@@ -271,17 +271,21 @@ std::shared_ptr<StaticMesh> SceneManager::addObject(const std::string& name) {
 
 void SceneManager::setCameraProperties(float fov_deg, float aspect_ratio, float z_near, float z_far) {
     scene_data_.proj = glm::perspective(glm::radians(fov_deg), aspect_ratio, z_near, z_far);
-    scene_data_.proj[1][1] *= -1;  // y is inverted in vulkan w.r.t. opengl
 }
 
 void SceneManager::setCameraPosition(const glm::vec3& pos) {
     camera_position_ = pos;
-    scene_data_.view = glm::lookAt(camera_look_at_, camera_position_, camera_up_);
+    if (follow_target_) {
+        scene_data_.view = lookAtMatrix();
+    } else {
+        scene_data_.view = glm::translate(scene_data_.view, camera_position_);
+    }
 }
 
 void SceneManager::setCameraTarget(const glm::vec3& target) {
     camera_look_at_ = target;
-    scene_data_.view = glm::translate(glm::mat4(1.0), camera_position_);
+    scene_data_.view = lookAtMatrix();
+    follow_target_ = true;
 }
 
 void SceneManager::setCameraTransform(const glm::mat4 transform) {
@@ -396,4 +400,28 @@ void SceneManager::drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pi
     for (auto& mesh : meshes_) {
         mesh->drawGeometry(cmd_buffer, pipeline_layout, swapchain_index);
     }
+}
+
+glm::mat4 SceneManager::lookAtMatrix() const {
+    glm::mat4 look_at_rot = glm::identity<glm::mat4>();
+
+    glm::vec3 forward = glm::normalize(camera_look_at_ - camera_position_);
+    glm::vec3 right = glm::normalize(glm::cross(forward, camera_up_));
+    glm::vec3 up = glm::cross(right, forward);
+
+    look_at_rot[0][0] = forward[0];
+    look_at_rot[1][0] = -right[0];
+    look_at_rot[2][0] = up[0];
+    look_at_rot[0][1] = forward[1];
+    look_at_rot[1][1] = -right[1];
+    look_at_rot[2][1] = up[1];
+    look_at_rot[0][2] = forward[2];
+    look_at_rot[1][2] = -right[2];
+    look_at_rot[2][2] = up[2];
+
+    look_at_rot[3][0] = glm::dot(forward, camera_position_);
+    look_at_rot[3][1] = glm::dot(right, camera_position_);
+    look_at_rot[3][2] = glm::dot(up, camera_position_);
+
+    return look_at_rot;
 }

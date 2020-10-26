@@ -26,6 +26,7 @@ public:
 	bool loadFromGlb(const std::string& file_path);
 	std::shared_ptr<StaticMesh> addObject(const std::string& name);
 
+	void setFollowTarget(bool should_follow) { follow_target_ = should_follow; }
 	void setCameraProperties(float fov_deg, float aspect_ratio, float z_near, float z_far);
 	void setCameraPosition(const glm::vec3& pos);
 	void setCameraTarget(const glm::vec3& target);
@@ -48,6 +49,8 @@ public:
 	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index);
 
 private:
+	glm::mat4 lookAtMatrix() const;
+
 	VulkanBackend* backend_;
 	SceneData scene_data_;
 	UniformBuffer uniform_buffer_;
@@ -62,4 +65,6 @@ private:
 	glm::vec3 camera_position_;
 	glm::vec3 camera_look_at_;
 	glm::vec3 camera_up_ = { 0.0f, 0.0f, 1.0f };
+	glm::quat camera_rotation_ = { 1.0, 0.0, 0.0, 0.0 };
+	bool follow_target_ = false;
 };

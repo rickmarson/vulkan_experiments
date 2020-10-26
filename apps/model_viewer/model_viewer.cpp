@@ -43,10 +43,13 @@ private:
 
 	// options
 	bool turntable_on_ = false;
+	bool lock_camera_to_target = true;
 	std::chrono::time_point<std::chrono::steady_clock> animation_start_time_;
 	float rot_angle_x_ = 0.0f;
 	float rot_angle_y_ = 0.0f;
-	float rot_angle_z_ = 45.0f;
+	float rot_angle_z_ = 0.0f;
+
+	glm::vec3 cam_pos_ = glm::vec3(3.0f, 0.0f, 1.0f);
 };
 
 // Implementation
@@ -83,8 +86,8 @@ bool ModelViewer::loadAssets() {
 	auto extent = vulkan_backend_.getSwapChainExtent();
 	scene_manager_ = SceneManager::create(&vulkan_backend_);
 	scene_manager_->setCameraProperties(45.0f, extent.width / (float)extent.height, 0.1f, 10.0f);
-	scene_manager_->setCameraPosition(glm::vec3(0.0f, 0.0f, 0.0f));
-	scene_manager_->setCameraTarget(glm::vec3(2.0f, 2.0f, 2.0f));
+	scene_manager_->setCameraPosition(cam_pos_);
+	scene_manager_->setCameraTarget(glm::vec3(0.0f, 0.0f, 0.0f));
 
 	imgui_renderer_ = ImGuiRenderer::create(&vulkan_backend_);
 	imgui_renderer_->setUp(window_);
@@ -161,6 +164,8 @@ void ModelViewer::cleanup() {
 }
 
 void ModelViewer::updateScene() {
+	scene_manager_->setFollowTarget(lock_camera_to_target);
+	scene_manager_->setCameraPosition(cam_pos_);
 	scene_manager_->update();
 
 	auto& mesh = meshes_["viking_room"];
@@ -301,9 +306,11 @@ void ModelViewer::drawUi() {
 	ImGui::SetNextWindowPos(ImVec2(10, 10));
 
 	const auto high_dpi_scale = imgui_renderer_->getHighDpiScale();
-	ImGui::SetNextWindowSize(ImVec2(270 * high_dpi_scale, 220 * high_dpi_scale));
+	ImGui::SetNextWindowSizeConstraints(ImVec2(270 * high_dpi_scale, 220 * high_dpi_scale), ImVec2(600 * high_dpi_scale, 600 * high_dpi_scale));
 
 	ImGui::Begin("Options");                   
+
+	ImGui::Text("Rotate Model");
 
 	if (ImGui::Checkbox(turn_table_label, &turntable_on_)) {
 		if (turntable_on_) {
@@ -315,6 +322,16 @@ void ModelViewer::drawUi() {
 	ImGui::SliderFloat("Y Rotation", &rot_angle_y_, -90.0f, 90.0f);
 	ImGui::SliderFloat("Z Rotation", &rot_angle_z_, -180.0f, 180.0f);
 	
+	ImGui::Separator();
+	ImGui::Text("Move Camera");
+
+	ImGui::SliderFloat("X Offset", &cam_pos_[0], -5.0f, 5.0f);
+	ImGui::SliderFloat("Y Offset", &cam_pos_[1], -5.0f, 5.0f);
+	ImGui::SliderFloat("Z Offset", &cam_pos_[2], -5.0f, 5.0f);
+	ImGui::Checkbox("Lock To Target", &lock_camera_to_target);
+
+	ImGui::Separator();
+
 	if (ImGui::Button(reset_button_label)) {
 		rot_angle_x_ = 0.0f;
 		rot_angle_y_ = 0.0f;
