@@ -25,6 +25,9 @@ public:
 
 	bool loadFromGlb(const std::string& file_path);
 	std::shared_ptr<StaticMesh> addObject(const std::string& name);
+	std::shared_ptr<StaticMesh> getObject(const std::string& name) const;
+	std::shared_ptr<StaticMesh> getObjectByIndex(uint32_t idx) const;
+
 
 	void setFollowTarget(bool should_follow) { follow_target_ = should_follow; }
 	void setCameraProperties(float fov_deg, float aspect_ratio, float z_near, float z_far);

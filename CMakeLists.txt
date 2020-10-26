@@ -13,7 +13,6 @@ include_directories(${Vulkan_INCLUDE_DIRS})
 include_directories("utilities/glm")
 include_directories("utilities/glfw/include")
 include_directories("utilities/stb")
-include_directories("utilities/tinyobjloader")
 include_directories("utilities/tinygltf")
 include_directories("utilities/SPIRV-Reflect")
 include_directories("vulkan")
@@ -44,8 +43,6 @@ add_library(imgui STATIC ${IMGUI_SOURCES})
 
 # Include sub-projects.
 
-set(TINYOBJLOADER_USE_DOUBLE OFF CACHE BOOL "disable TINYOBJLOADER_USE_DOUBLE")
-add_subdirectory("utilities/tinyobjloader")
 add_subdirectory("utilities/glfw")
 add_subdirectory("vulkan")
 add_subdirectory("apps/model_viewer")

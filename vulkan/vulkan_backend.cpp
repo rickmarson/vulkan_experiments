@@ -7,7 +7,6 @@
 #include "vulkan_backend.hpp"
 #include "shader_module.hpp"
 #include "texture.hpp"
-#include "mesh.hpp"
 #include "static_mesh.hpp"
 
 #include <optional>
@@ -298,10 +297,6 @@ std::shared_ptr<ShaderModule> VulkanBackend::createShaderModule(const std::strin
 
 std::shared_ptr<Texture> VulkanBackend::createTexture(const std::string& name) {
     return Texture::createTexture(name, device_, this);
-}
-
-std::shared_ptr<Mesh> VulkanBackend::createMesh(const std::string& name) {
-    return Mesh::createMesh(name, this);
 }
 
 std::shared_ptr<StaticMesh> VulkanBackend::createStaticMesh(const std::string& name) {

@@ -7,9 +7,9 @@ cmake_minimum_required (VERSION 3.8)
 file(GLOB TUTORIAL_SRCS "rainy_alley.cpp")
 
 add_executable(rainy_alley ${TUTORIAL_SRCS} ${TUTORIAL_HDRS})
-add_dependencies(rainy_alley glfw tinyobjloader imgui vulkan shaders)
+add_dependencies(rainy_alley glfw imgui vulkan shaders)
 
-target_link_libraries(rainy_alley ${Vulkan_LIBRARIES} vulkan glfw tinyobjloader imgui)
+target_link_libraries(rainy_alley ${Vulkan_LIBRARIES} vulkan glfw imgui)
 
 file(GLOB SHADERS "${CMAKE_SOURCE_DIR}/shaders/alley_vs.spv"
                   "${CMAKE_SOURCE_DIR}/shaders/alley_fs.spv"

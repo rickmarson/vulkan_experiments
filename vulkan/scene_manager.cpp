@@ -51,7 +51,7 @@ namespace {
                 const tinygltf::Accessor& uv_accessor = model.accessors[p.attributes.find("TEXCOORD_0")->second];
                 const tinygltf::BufferView& uv_view = model.bufferViews[uv_accessor.bufferView];
                 buffer_uv = reinterpret_cast<const float*>(&(model.buffers[uv_view.buffer].data[uv_accessor.byteOffset + uv_view.byteOffset]));
-                uv_stride = uv_accessor.ByteStride(uv_view) ? (uv_accessor.ByteStride(uv_view) / sizeof(float)) : TINYGLTF_TYPE_VEC2;
+                uv_stride = uv_accessor.ByteStride(uv_view) ? (uv_accessor.ByteStride(uv_view) / sizeof(float)) : 2;
             }
 
             if (p.attributes.find("NORMAL") != p.attributes.end()) {
@@ -59,12 +59,15 @@ namespace {
                 const gltf::Accessor& norm_accessor = model.accessors[p.attributes.find("NORMAL")->second];
                 const gltf::BufferView& norm_view = model.bufferViews[norm_accessor.bufferView];
                 buffer_normals = reinterpret_cast<const float*>(&(model.buffers[norm_view.buffer].data[norm_accessor.byteOffset + norm_view.byteOffset]));
-                norm_stride = norm_accessor.ByteStride(norm_view) ? (norm_accessor.ByteStride(norm_view) / sizeof(float)) : TINYGLTF_TYPE_VEC3;
+                norm_stride = norm_accessor.ByteStride(norm_view) ? (norm_accessor.ByteStride(norm_view) / sizeof(float)) : 3;
             }
 
             for (size_t v = 0; v < pos_accessor.count; v++) {
+                auto gltf_pos = glm::make_vec3(&buffer_pos[v * pos_stride]);
                 Vertex vert{};
-                vert.pos = glm::make_vec3(&buffer_pos[v * pos_stride]);
+                vert.pos[0] = -gltf_pos[2];
+                vert.pos[1] = gltf_pos[0];
+                vert.pos[2] = -gltf_pos[1];
                 vert.color = glm::vec3(1.0f); // this will need to change
                 vert.tex_coord = buffer_uv ? glm::make_vec2(&buffer_uv[v * uv_stride]) : glm::vec3(0.0f);
                 
@@ -138,15 +141,26 @@ namespace {
             glm::mat4 rotation = glm::mat4(1.0f);
             glm::vec3 scale = glm::vec3(1.0f);
             if (node.translation.size() == 3) {
-                translation = glm::make_vec3(node.translation.data());
+                auto gltf_trans = glm::make_vec3(node.translation.data());
+                translation[0] = -gltf_trans[2];
+                translation[1] = gltf_trans[0];
+                translation[2] = gltf_trans[1];
                 local_transform = glm::translate(local_transform, translation);
             }
             if (node.rotation.size() == 4) {
-                glm::quat q = glm::make_quat(node.rotation.data());
-                local_transform *= glm::mat4(q);
+                auto gltf_rot = glm::make_quat(node.rotation.data());
+                glm::quat rot;
+                rot.x = -gltf_rot.z;
+                rot.y = gltf_rot.x;
+                rot.z = gltf_rot.y;
+                rot.w = gltf_rot.w;
+                local_transform *= glm::mat4(rot);
             }
             if (node.scale.size() == 3) {
-                scale = glm::make_vec3(node.scale.data());
+                auto gltf_scale = glm::make_vec3(node.scale.data());
+                scale[0] = gltf_scale[2];
+                scale[1] = gltf_scale[0];
+                scale[2] = gltf_scale[1];
                 local_transform = glm::scale(local_transform, scale);
             }
         }
@@ -269,6 +283,22 @@ std::shared_ptr<StaticMesh> SceneManager::addObject(const std::string& name) {
     return meshes_.back();
 }
 
+std::shared_ptr<StaticMesh> SceneManager::getObject(const std::string& name) const {
+    for (auto& mesh : meshes_) {
+        if (mesh->getName() == name) {
+            return mesh;
+        }
+    }
+    return std::shared_ptr<StaticMesh>();
+}
+
+std::shared_ptr<StaticMesh> SceneManager::getObjectByIndex(uint32_t idx) const {
+    if (idx < meshes_.size()) {
+        return meshes_[idx];
+    }
+    return std::shared_ptr<StaticMesh>();
+}
+
 void SceneManager::setCameraProperties(float fov_deg, float aspect_ratio, float z_near, float z_far) {
     scene_data_.proj = glm::perspective(glm::radians(fov_deg), aspect_ratio, z_near, z_far);
 }
@@ -277,8 +307,10 @@ void SceneManager::setCameraPosition(const glm::vec3& pos) {
     camera_position_ = pos;
     if (follow_target_) {
         scene_data_.view = lookAtMatrix();
+        camera_rotation_ = glm::quat(scene_data_.view);
     } else {
-        scene_data_.view = glm::translate(scene_data_.view, camera_position_);
+        scene_data_.view = glm::translate(glm::mat4(1.0f), camera_position_);
+        scene_data_.view *= glm::mat4(camera_rotation_);
     }
 }
 

@@ -11,7 +11,6 @@
 // Interfaces
 class ShaderModule;
 class Texture;
-class Mesh;
 class StaticMesh;
 
 struct SubpassConfig {
@@ -91,7 +90,6 @@ public:
     
     std::shared_ptr<ShaderModule> createShaderModule(const std::string& name) const;
     std::shared_ptr<Texture> createTexture(const std::string& name);
-    std::shared_ptr<Mesh> createMesh(const std::string& name);
     std::shared_ptr<StaticMesh> createStaticMesh(const std::string& name);
 
     bool createDescriptorPool(const DescriptorPoolConfig& config);

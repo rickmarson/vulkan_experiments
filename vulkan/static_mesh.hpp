@@ -40,6 +40,7 @@ public:
 	Surface& addSurface();
 
 	void setTransform(const glm::mat4& transform);
+	const glm::mat4& getTransform() const { return model_data_.transform_matrix; }
 	void update();
 
 	void createUniformBuffer();

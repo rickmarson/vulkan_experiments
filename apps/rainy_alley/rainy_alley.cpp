@@ -108,9 +108,9 @@ bool RainyAlley::loadAssets() {
 
 	auto extent = vulkan_backend_.getSwapChainExtent();
 	scene_manager_ = SceneManager::create(&vulkan_backend_);
-	scene_manager_->setCameraProperties(90.0f, extent.width / (float)extent.height, 0.1f, 10.0f);
-	scene_manager_->setCameraPosition(glm::vec3(-1.0f, -1.0f, 0.0f));
-	scene_manager_->setCameraTarget(glm::vec3(2.0f, 2.0f, 2.0f));
+	scene_manager_->setCameraProperties(90.0f, extent.width / (float)extent.height, 0.1f, 1000.0f);
+	scene_manager_->setCameraPosition(glm::vec3(15.0f, 0.0f, 5.0f));
+	scene_manager_->setCameraTarget(glm::vec3(0.0f, 0.0f, 0.0f));
 
 	scene_manager_->loadFromGlb("meshes/alley.glb");
 

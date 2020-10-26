@@ -11,4 +11,4 @@ file(GLOB SHARED_SRCS "*.cpp")
 file(GLOB SHARED_HDRS ".hpp")
 
 add_library(vulkan ${SHARED_SRCS} ${SHARED_HDRS} ${SPIRV_REFLECT_SRCS})
-add_dependencies(vulkan glfw tinyobjloader imgui)
+add_dependencies(vulkan glfw imgui)

@@ -7,7 +7,7 @@
 #include "vulkan_app.hpp"
 #include "shader_module.hpp"
 #include "texture.hpp"
-#include "mesh.hpp"
+#include "static_mesh.hpp"
 #include "scene_manager.hpp"
 #include "imgui_renderer.hpp"
 
@@ -36,7 +36,6 @@ private:
 	std::vector<VkCommandBuffer> main_command_buffers_;
 
 	std::map<std::string, std::shared_ptr<ShaderModule>> shaders_;
-	std::map<std::string, std::shared_ptr<Mesh>> meshes_;
 	std::unique_ptr<SceneManager> scene_manager_;
 	RenderPass render_pass_;
 	Pipeline graphics_pipeline_;
@@ -44,7 +43,9 @@ private:
 	// options
 	bool turntable_on_ = false;
 	bool lock_camera_to_target = true;
+	bool update_mesh_transform = false;
 	std::chrono::time_point<std::chrono::steady_clock> animation_start_time_;
+	glm::mat4 initial_model_transform_ = glm::mat4(1.0f);
 	float rot_angle_x_ = 0.0f;
 	float rot_angle_y_ = 0.0f;
 	float rot_angle_z_ = 0.0f;
@@ -76,18 +77,14 @@ bool ModelViewer::loadAssets() {
 	shaders_[vertex_shader->getName()] = std::move(vertex_shader);
 	shaders_[fragment_shader->getName()] = std::move(fragment_shader);
 
-	auto mesh = vulkan_backend_.createMesh("viking_room");
-	if (!mesh->loadObjModel("meshes/viking_room.obj")) {
-		return false;
-	}
-
-	meshes_[mesh->getName()] = std::move(mesh);
-
 	auto extent = vulkan_backend_.getSwapChainExtent();
 	scene_manager_ = SceneManager::create(&vulkan_backend_);
 	scene_manager_->setCameraProperties(45.0f, extent.width / (float)extent.height, 0.1f, 10.0f);
 	scene_manager_->setCameraPosition(cam_pos_);
 	scene_manager_->setCameraTarget(glm::vec3(0.0f, 0.0f, 0.0f));
+
+	scene_manager_->loadFromGlb("meshes/viking_room.glb");
+	initial_model_transform_ = scene_manager_->getObjectByIndex(0)->getTransform();
 
 	imgui_renderer_ = ImGuiRenderer::create(&vulkan_backend_);
 	imgui_renderer_->setUp(window_);
@@ -146,10 +143,6 @@ void ModelViewer::cleanupSwapChainAssets() {
 	imgui_renderer_->cleanupGraphicsPipeline();
 
 	scene_manager_->deleteUniformBuffer();
-
-	for (auto& mesh : meshes_) {
-		mesh.second->deleteUniformBuffer();
-	}
 	
 	vulkan_backend_.destroyRenderPass(render_pass_);
 	vulkan_backend_.destroyPipeline(graphics_pipeline_);
@@ -159,33 +152,35 @@ void ModelViewer::cleanup() {
 	cleanupSwapChainAssets();
 	imgui_renderer_->shutDown();
 	vulkan_backend_.freeCommandBuffers(main_command_buffers_);
-	meshes_.clear();
+	scene_manager_.reset();
 	shaders_.clear();
 }
 
 void ModelViewer::updateScene() {
-	scene_manager_->setFollowTarget(lock_camera_to_target);
-	scene_manager_->setCameraPosition(cam_pos_);
-	scene_manager_->update();
-
-	auto& mesh = meshes_["viking_room"];
-
 	auto final_angle_z = rot_angle_z_;
 
 	if (turntable_on_) {
 		auto current_time = std::chrono::steady_clock::now();
 		float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - animation_start_time_).count();
 		final_angle_z *= glm::radians(90.0f * time);
+		update_mesh_transform = true;
 	}
 
-	auto rotation_matrix = 
-		glm::rotate(glm::mat4(1.0f), glm::radians(final_angle_z), glm::vec3(0.0f, 0.0f, 1.0f)) *
-		glm::rotate(glm::mat4(1.0f), glm::radians(rot_angle_y_), glm::vec3(0.0f, 1.0f, 0.0f)) *
-		glm::rotate(glm::mat4(1.0f), glm::radians(rot_angle_x_), glm::vec3(1.0f, 0.0f, 0.0f));
-	
-	mesh->setTransform(rotation_matrix);
+	if (update_mesh_transform) {
+		auto mesh = scene_manager_->getObjectByIndex(0);  // there's only one mesh
 
-	mesh->update();
+		auto rotation_matrix = initial_model_transform_;
+		rotation_matrix = glm::rotate(rotation_matrix, glm::radians(final_angle_z), glm::vec3(0.0f, 0.0f, 1.0f));
+		rotation_matrix = glm::rotate(rotation_matrix, glm::radians(rot_angle_y_), glm::vec3(0.0f, 1.0f, 0.0f));
+		rotation_matrix = glm::rotate(rotation_matrix, glm::radians(rot_angle_x_), glm::vec3(1.0f, 0.0f, 0.0f));
+
+		mesh->setTransform(rotation_matrix);
+		update_mesh_transform = false;
+	}
+
+	scene_manager_->setFollowTarget(lock_camera_to_target);
+	scene_manager_->setCameraPosition(cam_pos_);
+	scene_manager_->update();
 
 	drawUi();
 }
@@ -207,19 +202,13 @@ bool ModelViewer::createGraphicsPipeline() {
 	scene_manager_->createDescriptorSets(graphics_pipeline_.vk_descriptor_set_layouts);
 	scene_manager_->updateDescriptorSets(graphics_pipeline_.descriptor_metadata);
 
-	auto& mesh = meshes_["viking_room"];
-
-	mesh->createUniformBuffer();
-	mesh->createDescriptorSets(graphics_pipeline_.vk_descriptor_set_layouts);
-	mesh->updateDescriptorSets(graphics_pipeline_.descriptor_metadata);
-
 	return graphics_pipeline_.vk_pipeline != VK_NULL_HANDLE;
 }
 
 RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
 	auto& main_command_buffer = main_command_buffers_[swapchain_image];
 
-	// we might need to combine multiple command buffers in one frame in the future
+	// might need to combine multiple command buffers in one frame in the future
 	std::vector<VkCommandBuffer> command_buffers = { main_command_buffer };
 	vulkan_backend_.resetCommandBuffers(command_buffers);
 
@@ -257,16 +246,9 @@ RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
 
 	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &scene_descriptors[swapchain_image], 0, nullptr);
 
-	auto& mesh = meshes_["viking_room"];
-	auto& mesh_descriptors = mesh->getDescriptorSets();
-
-	vkCmdBindVertexBuffers(command_buffers[0], 0, 1, &mesh->getVertexBuffer().vk_buffer, offsets);
-	vkCmdBindIndexBuffer(command_buffers[0], mesh->getIndexBuffer().vk_buffer, 0, VK_INDEX_TYPE_UINT32);
-	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, MODEL_UNIFORM_SET_ID, 1, &mesh_descriptors[swapchain_image], 0, nullptr);
-
 	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0); // does nothing if not in debug
 
-	vkCmdDrawIndexed(command_buffers[0], mesh->getIndexCount(), 1, 0, 0, 0);
+	scene_manager_->drawGeometry(command_buffers[0], graphics_pipeline_.vk_pipeline_layout, swapchain_image);
 
 	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 1); // does nothing if not in debug
 
@@ -318,9 +300,9 @@ void ModelViewer::drawUi() {
 		}
 	}
 
-	ImGui::SliderFloat("X Rotation", &rot_angle_x_, -90.0f, 90.0f); 
-	ImGui::SliderFloat("Y Rotation", &rot_angle_y_, -90.0f, 90.0f);
-	ImGui::SliderFloat("Z Rotation", &rot_angle_z_, -180.0f, 180.0f);
+	if (ImGui::SliderFloat("X Rotation", &rot_angle_x_, -90.0f, 90.0f)) update_mesh_transform = true;
+	if (ImGui::SliderFloat("Y Rotation", &rot_angle_y_, -90.0f, 90.0f)) update_mesh_transform = true;
+	if (ImGui::SliderFloat("Z Rotation", &rot_angle_z_, -180.0f, 180.0f)) update_mesh_transform = true;
 	
 	ImGui::Separator();
 	ImGui::Text("Move Camera");

@@ -5,7 +5,8 @@ Most of the original boilerplate code comes from the [Vulkan Tutorial](https://v
 Major differences include:
 
 - Integration of the [SPIRV-Reflect](https://github.com/KhronosGroup/SPIRV-Reflect.git) library to automate parts of the graphics pipeline creation
-- Integration wit [ImGui](https://github.com/ocornut/imgui.git)
+- Integration with [ImGui](https://github.com/ocornut/imgui.git)
+- Replaced tinyobjloader with tinygltf
 - Use of subpasses
 - Use of secondary command buffers
 
@@ -29,7 +30,6 @@ This is essentially a fresh re-implementation of the Vulkan Tutorial to test the
 - [glfw](https://github.com/glfw/glfw.git)
 - [glm](https://github.com/g-truc/glm.git)
 - [imgui](https://github.com/ocornut/imgui.git)
-- [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader.git)
 - [stb](https://github.com/nothings/stb.git)
 - [tinygltf](https://github.com/syoyo/tinygltf)
 - [SPIRV-Reflect](https://github.com/KhronosGroup/SPIRV-Reflect.git)
