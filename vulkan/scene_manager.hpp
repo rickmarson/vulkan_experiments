@@ -52,6 +52,7 @@ public:
 	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index);
 
 private:
+	void updateCameraTransform();
 	glm::mat4 lookAtMatrix() const;
 
 	VulkanBackend* backend_;
@@ -65,9 +66,10 @@ private:
 	std::vector<std::shared_ptr<Material>> materials_;
 	std::vector<std::shared_ptr<StaticMesh>> meshes_;
 
-	glm::vec3 camera_position_;
-	glm::vec3 camera_look_at_;
+	glm::vec3 camera_position_ = { 0.0f, 0.0f, 0.0f };
+	glm::vec3 camera_forward_ = { 1.0f, 0.0f, 0.0f };
 	glm::vec3 camera_up_ = { 0.0f, 0.0f, 1.0f };
-	glm::quat camera_rotation_ = { 1.0, 0.0, 0.0, 0.0 };
+	glm::vec3 camera_look_at_;
+	glm::mat4 camera_transform_ = glm::mat4(1.0f);
 	bool follow_target_ = false;
 };

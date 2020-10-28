@@ -50,7 +50,7 @@ private:
 	float rot_angle_y_ = 0.0f;
 	float rot_angle_z_ = 0.0f;
 
-	glm::vec3 cam_pos_ = glm::vec3(3.0f, 0.0f, 1.0f);
+	glm::vec3 cam_pos_ = glm::vec3(-3.0f, 0.0f, 1.0f);
 };
 
 // Implementation

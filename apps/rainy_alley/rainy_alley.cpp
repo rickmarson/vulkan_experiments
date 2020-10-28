@@ -98,8 +98,8 @@ bool RainyAlley::loadAssets() {
 	ParticleEmitterConfig emitter_config;
 	emitter_config.name = "rain_drops_emitter";
 	emitter_config.starting_transform = glm::identity<glm::mat4>();
-	emitter_config.min_box_extent = glm::vec3(-8.0f, -8.0, 0.0f);
-	emitter_config.max_box_extent = glm::vec3(8.0f, 8.0, 12.0f);
+	emitter_config.min_box_extent = glm::vec3(-10.0f, -8.0, 0.0f);
+	emitter_config.max_box_extent = glm::vec3(2.0f, 8.0, 12.0f);
 	emitter_config.min_starting_velocity = glm::vec3(0.0f, 0.0f, -10.0f);
 	emitter_config.max_starting_velocity = glm::vec3(0.0f, 0.0f, 0.0f);
 
@@ -108,9 +108,9 @@ bool RainyAlley::loadAssets() {
 
 	auto extent = vulkan_backend_.getSwapChainExtent();
 	scene_manager_ = SceneManager::create(&vulkan_backend_);
-	scene_manager_->setCameraProperties(90.0f, extent.width / (float)extent.height, 0.1f, 1000.0f);
-	scene_manager_->setCameraPosition(glm::vec3(15.0f, 0.0f, 5.0f));
-	scene_manager_->setCameraTarget(glm::vec3(0.0f, 0.0f, 0.0f));
+	scene_manager_->setCameraProperties(45.0f, extent.width / (float)extent.height, 0.1f, 1000.0f);
+	scene_manager_->setCameraPosition(glm::vec3(-8.5f, 0.0f, 3.5f));
+	scene_manager_->setCameraTarget(glm::vec3(0.0f, 0.0f, 1.5f));
 
 	scene_manager_->loadFromGlb("meshes/alley.glb");
 

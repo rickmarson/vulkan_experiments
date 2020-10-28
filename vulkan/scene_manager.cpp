@@ -65,9 +65,9 @@ namespace {
             for (size_t v = 0; v < pos_accessor.count; v++) {
                 auto gltf_pos = glm::make_vec3(&buffer_pos[v * pos_stride]);
                 Vertex vert{};
-                vert.pos[0] = -gltf_pos[2];
+                vert.pos[0] = -gltf_pos[2];  // glTF "forward" is -Z, world "forward" is +X. Blender's "forward" is +Y
                 vert.pos[1] = gltf_pos[0];
-                vert.pos[2] = -gltf_pos[1];
+                vert.pos[2] = gltf_pos[1];
                 vert.color = glm::vec3(1.0f); // this will need to change
                 vert.tex_coord = buffer_uv ? glm::make_vec2(&buffer_uv[v * uv_stride]) : glm::vec3(0.0f);
                 
@@ -86,21 +86,21 @@ namespace {
                     case TINYGLTF_PARAMETER_TYPE_UNSIGNED_INT: {
                         const uint32_t* buf = static_cast<const uint32_t*>(data_ptr);
                         for (size_t index = 0; index < accessor.count; index++) {
-                            index_buffer.push_back(buf[index] + vertex_start);
+                            index_buffer.push_back(buf[index]);
                         }
                         break;
                     }
                     case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT: {
                         const uint16_t* buf = static_cast<const uint16_t*>(data_ptr);
                         for (size_t index = 0; index < accessor.count; index++) {
-                            index_buffer.push_back(buf[index] + vertex_start);
+                            index_buffer.push_back(buf[index]);
                         }
                         break;
                     }
                     case TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE: {
                         const uint8_t* buf = static_cast<const uint8_t*>(data_ptr);
                         for (size_t index = 0; index < accessor.count; index++) {
-                            index_buffer.push_back(buf[index] + vertex_start);
+                            index_buffer.push_back(buf[index]);
                         }
                         break;
                     }
@@ -123,6 +123,7 @@ namespace {
         auto& camera = model.cameras[node.camera];
 
         if (camera.type == "perspective") {
+            // TODO: can't really use the aspect ratio saved in the gltf as it depends on the current frame buffer.
             //manager->setCameraTransform(parent_transform);
             //manager->setCameraProperties(glm::degrees(camera.perspective.yfov), camera.perspective.aspectRatio, camera.perspective.znear, camera.perspective.zfar);
         }
@@ -133,39 +134,43 @@ namespace {
     }
 
     void processNode(SceneManager* manager, gltf::Model& model, const gltf::Node& node, const glm::mat4& parent_transform, std::vector<Vertex>& vertex_buffer, std::vector<uint32_t>& index_buffer) {
-        auto local_transform = glm::identity<glm::mat4>();
+        auto local_transform = glm::mat4(1.0f);
         if (node.matrix.size() == 16) {
             local_transform = glm::make_mat4x4(node.matrix.data());
         } else {
-            glm::vec3 translation = glm::vec3(0.0f);
+            glm::mat4 translation = glm::mat4(1.0f);
             glm::mat4 rotation = glm::mat4(1.0f);
-            glm::vec3 scale = glm::vec3(1.0f);
+            glm::mat4 scale = glm::mat4(1.0f);
             if (node.translation.size() == 3) {
                 auto gltf_trans = glm::make_vec3(node.translation.data());
-                translation[0] = -gltf_trans[2];
-                translation[1] = gltf_trans[0];
-                translation[2] = gltf_trans[1];
-                local_transform = glm::translate(local_transform, translation);
+                auto trans = glm::vec3(0.0f);
+                trans[0] = -gltf_trans[2];  // glTF "forward" is -Z, world "forward" is +X. Blender's "forward" is +Y
+                trans[1] = gltf_trans[0];
+                trans[2] = gltf_trans[1];
+                translation = glm::translate(translation, trans);
             }
             if (node.rotation.size() == 4) {
                 auto gltf_rot = glm::make_quat(node.rotation.data());
                 glm::quat rot;
-                rot.x = -gltf_rot.z;
+                rot.x = -gltf_rot.z;  // glTF "forward" is -Z, world "forward" is +X. Blender's "forward" is +Y
                 rot.y = gltf_rot.x;
                 rot.z = gltf_rot.y;
                 rot.w = gltf_rot.w;
-                local_transform *= glm::mat4(rot);
+                rotation = glm::mat4(rot);
             }
             if (node.scale.size() == 3) {
                 auto gltf_scale = glm::make_vec3(node.scale.data());
-                scale[0] = gltf_scale[2];
-                scale[1] = gltf_scale[0];
-                scale[2] = gltf_scale[1];
-                local_transform = glm::scale(local_transform, scale);
+                auto sc = glm::vec3(0.0f);
+                sc[0] = gltf_scale[2];
+                sc[1] = gltf_scale[0];
+                sc[2] = gltf_scale[1];
+                scale = glm::scale(scale, sc);
             }
+
+            local_transform = translation * rotation * scale;
         }
 
-        auto node_transform = local_transform * parent_transform;
+        auto node_transform = parent_transform * local_transform;
 
         if (node.mesh > -1) {
             processMeshNode(manager, model, node, node_transform, vertex_buffer, index_buffer);
@@ -305,23 +310,17 @@ void SceneManager::setCameraProperties(float fov_deg, float aspect_ratio, float 
 
 void SceneManager::setCameraPosition(const glm::vec3& pos) {
     camera_position_ = pos;
-    if (follow_target_) {
-        scene_data_.view = lookAtMatrix();
-        camera_rotation_ = glm::quat(scene_data_.view);
-    } else {
-        scene_data_.view = glm::translate(glm::mat4(1.0f), camera_position_);
-        scene_data_.view *= glm::mat4(camera_rotation_);
-    }
+    updateCameraTransform();
 }
 
 void SceneManager::setCameraTarget(const glm::vec3& target) {
     camera_look_at_ = target;
-    scene_data_.view = lookAtMatrix();
     follow_target_ = true;
+    updateCameraTransform();
 }
 
 void SceneManager::setCameraTransform(const glm::mat4 transform) {
-    scene_data_.view = transform;
+    camera_transform_ = transform;
 }
 
 DescriptorPoolConfig SceneManager::getDescriptorsCount() const {
@@ -368,6 +367,8 @@ std::shared_ptr<Material> SceneManager::getMaterial(uint32_t idx) {
 }
 
 void SceneManager::update() {
+    scene_data_.view = lookAtMatrix();
+
     for (size_t i = 0; i < backend_->getSwapChainSize(); i++) {
         backend_->updateBuffer<SceneData>(uniform_buffer_.buffers[i], { scene_data_ });
     }
@@ -434,26 +435,37 @@ void SceneManager::drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pi
     }
 }
 
+void SceneManager::updateCameraTransform() {    
+    if (follow_target_) {
+        camera_forward_ = glm::normalize(camera_look_at_ - camera_position_);
+    }
+
+    glm::vec3 right = glm::normalize(glm::cross(camera_forward_, camera_up_));
+    glm::vec3 up = glm::cross(right, camera_forward_);
+
+    // rotation
+    camera_transform_[0][0] = camera_forward_[0];
+    camera_transform_[1][0] = right[0];
+    camera_transform_[2][0] = up[0];
+    camera_transform_[0][1] = camera_forward_[1];
+    camera_transform_[1][1] = right[1];
+    camera_transform_[2][1] = up[1];
+    camera_transform_[0][2] = camera_forward_[2];
+    camera_transform_[1][2] = right[2];
+    camera_transform_[2][2] = up[2];
+
+    // translation
+    camera_transform_[3][0] = camera_position_[0];
+    camera_transform_[3][1] = camera_position_[1];
+    camera_transform_[3][2] = camera_position_[2];
+
+    // scale
+    camera_transform_[0][3] = 0.0f;
+    camera_transform_[1][3] = 0.0f;
+    camera_transform_[2][3] = 0.0f;
+    camera_transform_[3][3] = 1.0f;
+}
+
 glm::mat4 SceneManager::lookAtMatrix() const {
-    glm::mat4 look_at_rot = glm::identity<glm::mat4>();
-
-    glm::vec3 forward = glm::normalize(camera_look_at_ - camera_position_);
-    glm::vec3 right = glm::normalize(glm::cross(forward, camera_up_));
-    glm::vec3 up = glm::cross(right, forward);
-
-    look_at_rot[0][0] = forward[0];
-    look_at_rot[1][0] = -right[0];
-    look_at_rot[2][0] = up[0];
-    look_at_rot[0][1] = forward[1];
-    look_at_rot[1][1] = -right[1];
-    look_at_rot[2][1] = up[1];
-    look_at_rot[0][2] = forward[2];
-    look_at_rot[1][2] = -right[2];
-    look_at_rot[2][2] = up[2];
-
-    look_at_rot[3][0] = glm::dot(forward, camera_position_);
-    look_at_rot[3][1] = glm::dot(right, camera_position_);
-    look_at_rot[3][2] = glm::dot(up, camera_position_);
-
-    return look_at_rot;
+    return glm::inverse(camera_transform_);
 }
