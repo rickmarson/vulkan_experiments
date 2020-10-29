@@ -265,7 +265,7 @@ void ImGuiRenderer::endFrame() {
 }
 
 
-RecordCommandsResult ImGuiRenderer::recordCommands(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info) {
+RecordCommandsResult ImGuiRenderer::recordCommands(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info, const ImGuiProfileConfig& profile_config) {
     ImDrawData* draw_data = ImGui::GetDrawData();
 
     // we might need to combine multiple command buffers in one frame in the future
@@ -335,6 +335,10 @@ RecordCommandsResult ImGuiRenderer::recordCommands(uint32_t swapchain_image, VkR
     ImVec2 clip_off = draw_data->DisplayPos;         // (0,0) unless using multi-viewports
     ImVec2 clip_scale = draw_data->FramebufferScale; // (1,1) unless using retina display which are often (2,2)
 
+    if (profile_config.profile_draw) {
+        vulkan_backend_->writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, profile_config.start_query_num); // does nothing if not in debug
+    }
+
     // Render command lists
     // (Because we merged all buffers into a single one, we maintain our own offset into them)
     int global_vtx_offset = 0;
@@ -373,6 +377,10 @@ RecordCommandsResult ImGuiRenderer::recordCommands(uint32_t swapchain_image, VkR
         }
         global_idx_offset += cmd_list->IdxBuffer.Size;
         global_vtx_offset += cmd_list->VtxBuffer.Size;
+    }
+
+    if (profile_config.profile_draw) {
+        vulkan_backend_->writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, profile_config.stop_query_num); // does nothing if not in debug
     }
 
     if (vkEndCommandBuffer(command_buffers[0]) != VK_SUCCESS) {

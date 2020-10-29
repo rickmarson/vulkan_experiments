@@ -20,6 +20,11 @@ struct ParticleEmitterConfig {
 	glm::vec3 max_box_extent;
 	glm::vec3 min_starting_velocity;
 	glm::vec3 max_starting_velocity;
+
+	// profiler settings
+	bool profile = false;
+	uint32_t start_query_num = 0;
+	uint32_t stop_query_num = 0;
 };
 
 class ParticleEmitter {

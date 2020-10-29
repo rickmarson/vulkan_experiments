@@ -41,6 +41,7 @@ private:
 	Pipeline graphics_pipeline_;
 
 	// options
+	float camera_fov_deg_ = 45.0f;
 	bool turntable_on_ = false;
 	bool lock_camera_to_target = true;
 	bool update_mesh_transform = false;
@@ -79,7 +80,7 @@ bool ModelViewer::loadAssets() {
 
 	auto extent = vulkan_backend_.getSwapChainExtent();
 	scene_manager_ = SceneManager::create(&vulkan_backend_);
-	scene_manager_->setCameraProperties(45.0f, extent.width / (float)extent.height, 0.1f, 10.0f);
+	scene_manager_->setCameraProperties(camera_fov_deg_, extent.width / (float)extent.height, 0.1f, 10.0f);
 	scene_manager_->setCameraPosition(cam_pos_);
 	scene_manager_->setCameraTarget(glm::vec3(0.0f, 0.0f, 0.0f));
 
@@ -90,7 +91,7 @@ bool ModelViewer::loadAssets() {
 	imgui_renderer_->setUp(window_);
 
 #ifndef NDEBUG
-	vulkan_backend_.enableTimestampQueries(2);
+	vulkan_backend_.enableTimestampQueries(4);
 #endif
 
 	return true;
@@ -126,6 +127,9 @@ bool ModelViewer::setupScene() {
 	if (render_pass_.vk_render_pass == VK_NULL_HANDLE) {
 		return false;
 	}
+
+	auto extent = vulkan_backend_.getSwapChainExtent();
+	scene_manager_->setCameraProperties(camera_fov_deg_, extent.width / (float)extent.height, 0.1f, 10.0f);
 
 	if (!createGraphicsPipeline()) {
 		return false;
@@ -222,7 +226,7 @@ RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
 		return makeRecordCommandsResult(false, command_buffers);
 	}
 
-	vulkan_backend_.resetTimestampQueries(command_buffers[0]);
+	vulkan_backend_.resetAllTimestampQueries(command_buffers[0]);
 
 	VkRenderPassBeginInfo render_pass_info{};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -255,7 +259,8 @@ RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
 	// register UI overlay commands
 	vkCmdNextSubpass(command_buffers[0], VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 	
-	auto commands = imgui_renderer_->recordCommands(swapchain_image, render_pass_info);
+	ImGuiProfileConfig ui_profile_config = { true, 2, 3 };
+	auto commands = imgui_renderer_->recordCommands(swapchain_image, render_pass_info, ui_profile_config);
 	auto success = std::get<0>(commands);
 
 	if (success) {
@@ -274,10 +279,12 @@ RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
 
 void ModelViewer::drawUi() {
 	static auto time_to_draw_geometry = 0.0f;
+	static auto time_to_draw_ui = 0.0f;
 	
 	auto vulkan_stats = vulkan_backend_.retrieveTimestampQueries();
 	if (!vulkan_stats.empty()) {
 		time_to_draw_geometry = vulkan_stats[1] - vulkan_stats[0];
+		time_to_draw_ui = vulkan_stats[3] - vulkan_stats[2];
 	}
 
 	imgui_renderer_->beginFrame();
@@ -321,16 +328,20 @@ void ModelViewer::drawUi() {
 		turntable_on_ = false;
 	}
 
-	ImGui::NewLine();
-	ImGui::Separator();
-	ImGui::NewLine();
+	ImGui::End();
 
-	ImGui::Text("Stats:");
-	ImGui::NewLine();
+	auto extent = vulkan_backend_.getSwapChainExtent();
+	auto stats_width = 200 * high_dpi_scale;
+	auto stats_pos = extent.width - stats_width - 50;
+	ImGui::SetNextWindowPos(ImVec2(stats_pos, 10));
+	ImGui::SetNextWindowSizeConstraints(ImVec2(stats_width, 80 * high_dpi_scale), ImVec2(stats_width, 100 * high_dpi_scale));
+
+	ImGui::Begin("Stats");
 
 	ImGui::Text("Frame time: %.3f ms/frame", 1000.0f / ImGui::GetIO().Framerate);
 	ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
 	ImGui::Text("Geom. draw time: %.4f ms", time_to_draw_geometry);
+	ImGui::Text("UI draw time: %.4f ms", time_to_draw_ui);
 	
 	ImGui::End();
 

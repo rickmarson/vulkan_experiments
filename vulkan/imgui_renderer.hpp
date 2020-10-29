@@ -16,6 +16,12 @@ class Texture;
 
 using GLFWWindowHandle = void*;
 
+struct ImGuiProfileConfig {
+	bool profile_draw = false;
+	uint32_t start_query_num = 0;
+	uint32_t stop_query_num = 0;
+};
+
 class ImGuiRenderer {
 public:
 	static std::unique_ptr<ImGuiRenderer> create(VulkanBackend* backend);
@@ -33,7 +39,7 @@ public:
 
 	void beginFrame();
 	void endFrame();
-	RecordCommandsResult recordCommands(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info);
+	RecordCommandsResult recordCommands(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info, const ImGuiProfileConfig& profile_config);
 
 private:
 	void InitImGui(GLFWWindowHandle window);

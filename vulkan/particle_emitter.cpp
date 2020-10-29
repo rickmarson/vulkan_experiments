@@ -178,12 +178,24 @@ RecordCommandsResult ParticleEmitter::recordComputeCommands() {
         return makeRecordCommandsResult(false, compute_command_buffers_);
     }
 
+    if (config_.profile) {
+        backend_->resetTimestampQueries(compute_command_buffers_[0], config_.start_query_num, 2);
+    }
+
     vkCmdBindPipeline(compute_command_buffers_[0], VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_.vk_pipeline);
     vkCmdBindDescriptorSets(compute_command_buffers_[0], VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_.vk_pipeline_layout, COMPUTE_PARTICLE_BUFFER_SET_ID, 1, &vk_descriptor_sets_compute_[0], 0, nullptr);
     
     vkCmdPushConstants(compute_command_buffers_[0], compute_pipeline_.vk_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ParticlesGlobalState), &global_state_pc_);
 
+    if (config_.profile) {
+        backend_->writeTimestampQuery(compute_command_buffers_[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, config_.start_query_num);
+    }
+
     vkCmdDispatch(compute_command_buffers_[0], global_state_pc_.particles_count / 32 + 1, 1, 1);
+
+    if (config_.profile) {
+        backend_->writeTimestampQuery(compute_command_buffers_[0], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, config_.stop_query_num);
+    }
 
     if (vkEndCommandBuffer(compute_command_buffers_[0]) != VK_SUCCESS) {
         std::cerr << "Failed to record compute command buffer for particle emitter " << config_.name << std::endl;

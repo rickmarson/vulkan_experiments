@@ -45,6 +45,7 @@ private:
 	Pipeline rain_graphics_pipeline_;
 
 	// options
+	float camera_fov_deg_ = 45.0f;
 	
 };
 
@@ -103,12 +104,19 @@ bool RainyAlley::loadAssets() {
 	emitter_config.min_starting_velocity = glm::vec3(0.0f, 0.0f, -10.0f);
 	emitter_config.max_starting_velocity = glm::vec3(0.0f, 0.0f, 0.0f);
 
+#ifndef NDEBUG
+	vulkan_backend_.enableTimestampQueries(8);
+	emitter_config.profile = true;
+	emitter_config.start_query_num = 0;
+	emitter_config.stop_query_num = 1;
+#endif
+	 
 	rain_drops_emitter_ = ParticleEmitter::createParticleEmitter(emitter_config, &vulkan_backend_);
 	rain_drops_emitter_->createParticles(1000, "shaders/rainfall_cp.spv");
 
 	auto extent = vulkan_backend_.getSwapChainExtent();
 	scene_manager_ = SceneManager::create(&vulkan_backend_);
-	scene_manager_->setCameraProperties(45.0f, extent.width / (float)extent.height, 0.1f, 1000.0f);
+	scene_manager_->setCameraProperties(camera_fov_deg_, extent.width / (float)extent.height, 0.1f, 1000.0f);
 	scene_manager_->setCameraPosition(glm::vec3(-10.0f, 0.0f, 4.0f));
 	scene_manager_->setCameraTarget(glm::vec3(0.0f, 0.0f, 2.0f));
 
@@ -116,10 +124,6 @@ bool RainyAlley::loadAssets() {
 
 	imgui_renderer_ = ImGuiRenderer::create(&vulkan_backend_);
 	imgui_renderer_->setUp(window_);
-
-#ifndef NDEBUG
-	vulkan_backend_.enableTimestampQueries(2);
-#endif
 
 	return true;
 }
@@ -170,6 +174,9 @@ bool RainyAlley::setupScene() {
 	if (render_pass_.vk_render_pass == VK_NULL_HANDLE) {
 		return false;
 	}
+
+	auto extent = vulkan_backend_.getSwapChainExtent();
+	scene_manager_->setCameraProperties(camera_fov_deg_, extent.width / (float)extent.height, 0.1f, 1000.0f);
 
 	if (!createGraphicsPipeline()) {
 		return false;
@@ -298,7 +305,7 @@ RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
 		return makeRecordCommandsResult(false, command_buffers);
 	}
 
-	vulkan_backend_.resetTimestampQueries(command_buffers[0]);
+	vulkan_backend_.resetTimestampQueries(command_buffers[0], 2, 6);
 
 	VkRenderPassBeginInfo render_pass_info{};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -322,7 +329,11 @@ RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
 
 	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, alley_graphics_pipeline_.vk_pipeline);
 
+	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 2); // does nothing if not in debug
+
 	scene_manager_->drawGeometry(command_buffers[0], alley_graphics_pipeline_.vk_pipeline_layout, swapchain_image);
+
+	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 3); // does nothing if not in debug
 
 	vkCmdNextSubpass(command_buffers[0], VK_SUBPASS_CONTENTS_INLINE);
 
@@ -333,16 +344,17 @@ RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
 
 	vkCmdBindVertexBuffers(command_buffers[0], 0, 1, &rain_drops_emitter_->getVertexBuffer().vk_buffer, offsets);
 	
-	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0); // does nothing if not in debug
+	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 4); // does nothing if not in debug
 
 	vkCmdDraw(command_buffers[0], rain_drops_emitter_->getVertexCount(), 1, 0, 0);
 	
-	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 1); // does nothing if not in debug
+	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 5); // does nothing if not in debug
 
 	// register UI overlay commands
 	vkCmdNextSubpass(command_buffers[0], VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 	
-	auto commands = imgui_renderer_->recordCommands(swapchain_image, render_pass_info);
+	ImGuiProfileConfig ui_profile_config = { true, 6, 7 };
+	auto commands = imgui_renderer_->recordCommands(swapchain_image, render_pass_info, ui_profile_config);
 	auto success = std::get<0>(commands);
 
 	if (success) {
@@ -360,12 +372,45 @@ RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
 }
 
 void RainyAlley::drawUi() {
+	static auto time_to_exec_compute = 0.0f;
+	static auto time_to_draw_geometry = 0.0f;
+	static auto time_to_draw_particles = 0.0f;
+	static auto time_to_draw_ui = 0.0f;
+
+	auto vulkan_stats = vulkan_backend_.retrieveTimestampQueries();
+	if (!vulkan_stats.empty()) {
+		time_to_exec_compute = vulkan_stats[1] - vulkan_stats[0];
+		time_to_draw_geometry = vulkan_stats[3] - vulkan_stats[2];
+		time_to_draw_particles = vulkan_stats[5] - vulkan_stats[4];
+		time_to_draw_ui = vulkan_stats[7] - vulkan_stats[6];
+	}
 
 	imgui_renderer_->beginFrame();
 
-	ImGui::Begin("Options");                   
+	ImGui::SetNextWindowPos(ImVec2(10, 10));
 
+	const auto high_dpi_scale = imgui_renderer_->getHighDpiScale();
+	ImGui::SetNextWindowSizeConstraints(ImVec2(80 * high_dpi_scale, 80 * high_dpi_scale), ImVec2(100 * high_dpi_scale, 150 * high_dpi_scale));
+
+	ImGui::Begin("Options");                   
 	
+	ImGui::End();
+
+	auto extent = vulkan_backend_.getSwapChainExtent();
+	auto stats_width = 220 * high_dpi_scale;
+	auto stats_pos = extent.width - stats_width - 50;
+	ImGui::SetNextWindowPos(ImVec2(stats_pos, 10));
+	ImGui::SetNextWindowSizeConstraints(ImVec2(stats_width, 120 * high_dpi_scale), ImVec2(stats_width, 150 * high_dpi_scale));
+
+	ImGui::Begin("Stats");
+
+	ImGui::Text("Frame time: %.3f ms/frame", 1000.0f / ImGui::GetIO().Framerate);
+	ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+	ImGui::Text("Rain update time: %.4f ms", time_to_exec_compute);
+	ImGui::Text("Alley draw time: %.4f ms", time_to_draw_geometry);
+	ImGui::Text("Rain draw time: %.4f ms", time_to_draw_particles);
+	ImGui::Text("UI draw time: %.4f ms", time_to_draw_ui);
+
 	ImGui::End();
 
 	imgui_renderer_->endFrame();

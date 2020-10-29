@@ -1017,9 +1017,15 @@ std::vector<float> VulkanBackend::retrieveTimestampQueries(bool should_wait, int
     return result_ms;
 }
 
-void VulkanBackend::resetTimestampQueries(VkCommandBuffer& command_buffer) {
+void VulkanBackend::resetAllTimestampQueries(VkCommandBuffer& command_buffer) {
     if (timestampQueriesEnabled()) {
         vkCmdResetQueryPool(command_buffer, timestamp_queries_pool_, 0, timestamp_queries_);
+    }
+}
+
+void VulkanBackend::resetTimestampQueries(VkCommandBuffer& command_buffer, uint32_t first, uint32_t count) {
+    if (timestampQueriesEnabled()) {
+        vkCmdResetQueryPool(command_buffer, timestamp_queries_pool_, first, count);
     }
 }
 
