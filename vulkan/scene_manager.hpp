@@ -48,7 +48,7 @@ public:
 	void createDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
 	void updateDescriptorSets(const DescriptorSetMetadata& metadata);
 	std::vector<VkDescriptorSet>& getDescriptorSets() { return vk_descriptor_sets_; }
-	std::shared_ptr<Texture> getSceneDepthBuffer() { return scene_depth_buffer_; }
+	std::shared_ptr<Texture>& getSceneDepthBuffer() { return scene_depth_buffer_; }
 
 	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index);
 
