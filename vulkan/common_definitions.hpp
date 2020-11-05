@@ -111,16 +111,16 @@ struct Pipeline {
 
 struct Vertex {
     glm::vec3 pos;
-    glm::vec3 color;
+    glm::vec3 normal;
     glm::vec2 tex_coord;
 
     static VertexFormatInfo getFormatInfo() {
-        std::vector<size_t> offsets = { offsetof(Vertex, pos), offsetof(Vertex, color), offsetof(Vertex, tex_coord) };
+        std::vector<size_t> offsets = { offsetof(Vertex, pos), offsetof(Vertex, normal), offsetof(Vertex, tex_coord) };
         return { sizeof(Vertex) , offsets };
     }
 
     bool operator==(const Vertex& other) const {
-        return pos == other.pos && color == other.color && tex_coord == other.tex_coord;
+        return pos == other.pos && normal == other.normal && tex_coord == other.tex_coord;
     }
 };
 

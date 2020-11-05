@@ -200,9 +200,11 @@ void Texture::createDepthStencilAttachment(uint32_t width, uint32_t height, VkSa
     transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 }
 
-void Texture::createDepthStorageImage(uint32_t width, uint32_t height) {
+void Texture::createDepthStorageImage(uint32_t width, uint32_t height, bool as_rgba32) {
+    VkFormat format = as_rgba32 ? VK_FORMAT_R32G32B32A32_SFLOAT : VK_FORMAT_R32_SFLOAT;
+
     if (!isFormatSupported(backend_->getPhysicalDevice(),
-        VK_FORMAT_R32_SFLOAT,
+        format,
         VK_IMAGE_TILING_OPTIMAL,
         VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)) {
         std::cerr << "Error creating depth storage image" << std::endl;
@@ -214,7 +216,7 @@ void Texture::createDepthStorageImage(uint32_t width, uint32_t height) {
     height_ = height;
     channels_ = 1;
     mip_levels_ = 1;
-    vk_format_ = VK_FORMAT_R32_SFLOAT;
+    vk_format_ = format;
     vk_usage_flags_ = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
     vk_tiling_ = VK_IMAGE_TILING_OPTIMAL;
     vk_mem_props_ = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;

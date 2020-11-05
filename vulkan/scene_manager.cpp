@@ -55,7 +55,6 @@ namespace {
             }
 
             if (p.attributes.find("NORMAL") != p.attributes.end()) {
-                // here for reference, not yet used 
                 const gltf::Accessor& norm_accessor = model.accessors[p.attributes.find("NORMAL")->second];
                 const gltf::BufferView& norm_view = model.bufferViews[norm_accessor.bufferView];
                 buffer_normals = reinterpret_cast<const float*>(&(model.buffers[norm_view.buffer].data[norm_accessor.byteOffset + norm_view.byteOffset]));
@@ -64,11 +63,14 @@ namespace {
 
             for (size_t v = 0; v < pos_accessor.count; v++) {
                 auto gltf_pos = glm::make_vec3(&buffer_pos[v * pos_stride]);
+                auto gltf_norm = glm::make_vec3(&buffer_normals[v * norm_stride]);
                 Vertex vert{};
                 vert.pos[0] = -gltf_pos[2];  // glTF "forward" is -Z, world "forward" is +X. Blender's "forward" is +Y
                 vert.pos[1] = gltf_pos[0];
                 vert.pos[2] = gltf_pos[1];
-                vert.color = glm::vec3(1.0f); // this will need to change
+                vert.normal[0] = -gltf_norm[2];
+                vert.normal[1] = gltf_norm[0];
+                vert.normal[2] = gltf_norm[1];
                 vert.tex_coord = buffer_uv ? glm::make_vec2(&buffer_uv[v * uv_stride]) : glm::vec3(0.0f);
                 
                 vertex_buffer.push_back(vert);
@@ -387,8 +389,9 @@ void SceneManager::createUniforms() {
     }
 
     auto extent = backend_->getSwapChainExtent();
+    // create an image buffer to store per-fragment depth and normal information that can be shared across pipelines
     scene_depth_buffer_ = backend_->createTexture("scene_depth_buffer_storage");
-    scene_depth_buffer_->createDepthStorageImage(extent.width, extent.height);
+    scene_depth_buffer_->createDepthStorageImage(extent.width, extent.height, true /*as rgba*/);
 }
 
 void SceneManager::deleteUniforms() {

@@ -13,7 +13,7 @@ layout(set = 1, binding = 0) uniform Camera {
     mat4 proj;
     ivec2 framebuffer_size;
 } camera;
-layout(set = 1, binding = 1, r32f) uniform image2D scene_depth_buffer;
+layout(set = 1, binding = 1, rgba32f) uniform image2D scene_depth_buffer; // holds per-fragment depth + surface normal 
 
 layout(push_constant) uniform GlobalState {
     uint particles_count;
@@ -40,16 +40,25 @@ void main() {
         vec3 screen_pos;
         if (worldToScreen(camera.proj, camera.view, camera.framebuffer_size, p_next, screen_pos)) {
             ivec2 depth_idx = ivec2( screen_pos.x, screen_pos.y ); 
-            float depth = imageLoad(scene_depth_buffer, depth_idx).x;
+            vec4 depth_normal = imageLoad(scene_depth_buffer, depth_idx);
+            float depth = depth_normal.x;
+            vec3 surface_normal = depth_normal.yzw; // note that normals are stored in world coords
             if (abs(screen_pos.z - depth) <= 1e-3) {
                 collided = true;
+                
+                // only "splash" on surfaces that are near-parallel to the ground, respawn the rest immediately
+                float to_vertical = dot(normalize(surface_normal), vec3(0.0, 0.0, 1.0));
+                to_vertical = acos(to_vertical);
+                if (to_vertical > 0.7) respawn = true;
             }
         }
 
         pos = vec4(p_next, collided ? 1.0 : 0.0);
         vel = vec4(v_next, vel.w);
     } else {
-        vel.w -= global_state.delta_time; // vel.w holds how long a particle should be kept alive after a collision
+        // vel.w holds how long a particle should be kept alive after a collision 
+        // i.e. how long the "splash" lasts
+        vel.w -= global_state.delta_time;
         if (vel.w <= 0.0) respawn = true;
     }
 

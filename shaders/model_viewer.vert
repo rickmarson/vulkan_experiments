@@ -4,7 +4,7 @@
 #include "common.glsl"
 
 layout(location = 0) in vec3 in_position;
-layout(location = 1) in vec3 in_color;
+layout(location = 1) in vec3 in_normal;
 layout(location = 2) in vec2 in_tex_coord;
 
 layout(location = 0) out vec3 frag_color;
@@ -20,6 +20,8 @@ layout(set = 1, binding = 1) uniform ModelData {
     mat4 transform;
 } model;
 
+const vec3 colour = vec3(1.0, 1.0, 1.0);
+
 void main() {
     mat4 model_view = scene.view * model.transform;
     mat4 proj = scene.proj;
@@ -27,6 +29,6 @@ void main() {
     projectionToVulkan(proj);
 
     gl_Position = proj * model_view * vec4(in_position, 1.0);
-    frag_color = in_color;
+    frag_color = colour;
     frag_tex_coord = in_tex_coord;
 }
