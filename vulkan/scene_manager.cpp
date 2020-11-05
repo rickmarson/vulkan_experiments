@@ -275,7 +275,7 @@ bool SceneManager::loadFromGlb(const std::string& file_path) {
     auto& scene = gltf_model.scenes[0];
     for (auto n : scene.nodes) {
         auto& gltf_node = gltf_model.nodes[n];
-        glm::mat4& transform = glm::identity<glm::mat4>();
+        glm::mat4 transform = glm::mat4(1.0f);
         processNode(this, gltf_model, gltf_node, transform, vertex_buffer, index_buffer);
     }
 
