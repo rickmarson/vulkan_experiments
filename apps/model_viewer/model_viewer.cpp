@@ -146,7 +146,7 @@ bool ModelViewer::setupScene() {
 void ModelViewer::cleanupSwapChainAssets() {
 	imgui_renderer_->cleanupGraphicsPipeline();
 
-	scene_manager_->deleteUniformBuffer();
+	scene_manager_->deleteUniforms();
 	
 	vulkan_backend_.destroyRenderPass(render_pass_);
 	vulkan_backend_.destroyPipeline(graphics_pipeline_);
@@ -202,7 +202,7 @@ bool ModelViewer::createGraphicsPipeline() {
 
 	graphics_pipeline_ = vulkan_backend_.createGraphicsPipeline(config);
 
-	scene_manager_->createUniformBuffer();
+	scene_manager_->createUniforms();
 	scene_manager_->createDescriptorSets(graphics_pipeline_.vk_descriptor_set_layouts);
 	scene_manager_->updateDescriptorSets(graphics_pipeline_.descriptor_metadata);
 

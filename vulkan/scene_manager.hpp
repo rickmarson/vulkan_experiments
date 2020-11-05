@@ -28,12 +28,12 @@ public:
 	std::shared_ptr<StaticMesh> getObject(const std::string& name) const;
 	std::shared_ptr<StaticMesh> getObjectByIndex(uint32_t idx) const;
 
-
 	void setFollowTarget(bool should_follow) { follow_target_ = should_follow; }
 	void setCameraProperties(float fov_deg, float aspect_ratio, float z_near, float z_far);
 	void setCameraPosition(const glm::vec3& pos);
 	void setCameraTarget(const glm::vec3& target);
 	void setCameraTransform(const glm::mat4 transform);
+	const SceneData& getSceneData() const { return scene_data_; }
 
 	DescriptorPoolConfig getDescriptorsCount() const;
 	std::shared_ptr<StaticMesh> getMeshByIndex(uint32_t idx);
@@ -43,11 +43,12 @@ public:
 
 	void update();
 
-	void createUniformBuffer();
-	void deleteUniformBuffer();
+	void createUniforms();
+	void deleteUniforms();
 	void createDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
 	void updateDescriptorSets(const DescriptorSetMetadata& metadata);
 	std::vector<VkDescriptorSet>& getDescriptorSets() { return vk_descriptor_sets_; }
+	std::shared_ptr<Texture> getSceneDepthBuffer() { return scene_depth_buffer_; }
 
 	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index);
 
@@ -58,6 +59,7 @@ private:
 	VulkanBackend* backend_;
 	SceneData scene_data_;
 	UniformBuffer uniform_buffer_;
+	std::shared_ptr<Texture> scene_depth_buffer_;
 	std::vector<VkDescriptorSet> vk_descriptor_sets_;
 
 	Buffer scene_vertex_buffer_;

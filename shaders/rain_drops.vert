@@ -1,5 +1,6 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
 #include "common.glsl"
 
 layout(location = 0) in vec4 in_position;
@@ -23,5 +24,5 @@ void main() {
     projectionToVulkan(proj);
 
     gl_Position = proj * model_view * vec4(in_position.xyz, 1.0);
-    out_colour = vec4(1.0, 0.0, 0.0, 1.0);
+    out_colour = vec4(1.0, in_position.w, 0.0, 1.0);
 }

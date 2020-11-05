@@ -333,6 +333,7 @@ DescriptorPoolConfig SceneManager::getDescriptorsCount() const {
     }
 
     config.uniform_buffers_count += 1;
+    config.image_storage_buffers_count += 1;
     return config;
 }
 
@@ -378,20 +379,26 @@ void SceneManager::update() {
     }
 }
 
-void SceneManager::createUniformBuffer() {
+void SceneManager::createUniforms() {
     uniform_buffer_ = backend_->createUniformBuffer<SceneData>("scene_data"); // the buffer lifecycle is managed by the backend
 
     for (auto& mesh : meshes_) {
         mesh->createUniformBuffer();
     }
+
+    auto extent = backend_->getSwapChainExtent();
+    scene_depth_buffer_ = backend_->createTexture("scene_depth_buffer_storage");
+    scene_depth_buffer_->createDepthStorageImage(extent.width, extent.height);
 }
 
-void SceneManager::deleteUniformBuffer() {
+void SceneManager::deleteUniforms() {
     backend_->destroyUniformBuffer(uniform_buffer_);
 
     for (auto& mesh : meshes_) {
         mesh->deleteUniformBuffer();
     }
+
+    scene_depth_buffer_.reset();
 }
 
 void SceneManager::createDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {
@@ -419,6 +426,10 @@ void SceneManager::createDescriptorSets(const std::map<uint32_t, VkDescriptorSet
 void SceneManager::updateDescriptorSets(const DescriptorSetMetadata& metadata) {
     const auto& bindings = metadata.set_bindings.find(SCENE_UNIFORM_SET_ID)->second;
     backend_->updateDescriptorSets(uniform_buffer_, vk_descriptor_sets_, bindings.find(SCENE_DATA_BINDING_NAME)->second);
+
+    if (bindings.find(SCENE_DEPTH_BUFFER_STORAGE) != bindings.end()){
+        scene_depth_buffer_->updateDescriptorSets(vk_descriptor_sets_, bindings.find(SCENE_DEPTH_BUFFER_STORAGE)->second);
+    }
 
     for (auto& mesh : meshes_) {
         mesh->updateDescriptorSets(metadata);

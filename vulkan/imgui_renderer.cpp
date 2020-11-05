@@ -558,13 +558,13 @@ void ImGuiRenderer::createBuffers() {
     if (vertex_buffer_.vk_buffer == VK_NULL_HANDLE) {
         max_vertex_count_ = draw_data->TotalVtxCount * 5; // leave enough room for 
         auto empty_vertex_buffer = std::vector<ImDrawVert>(max_vertex_count_, ImDrawVert());
-        vertex_buffer_ = vulkan_backend_->createVertexBuffer<ImDrawVert>("imgui_vertex_buffer", empty_vertex_buffer, false);
+        vertex_buffer_ = vulkan_backend_->createVertexBuffer<ImDrawVert>("imgui_vertex_buffer", empty_vertex_buffer, true);
     }
 
     if (index_buffer_.vk_buffer == VK_NULL_HANDLE) {
         max_index_count_ = draw_data->TotalIdxCount * 5;
         auto empty_index_buffer = std::vector<ImDrawIdx>(max_index_count_, ImDrawIdx());
-        index_buffer_ = vulkan_backend_->createIndexBuffer<ImDrawIdx>("imgui_index_buffer", empty_index_buffer, false);
+        index_buffer_ = vulkan_backend_->createIndexBuffer<ImDrawIdx>("imgui_index_buffer", empty_index_buffer, true);
     }
 }
 

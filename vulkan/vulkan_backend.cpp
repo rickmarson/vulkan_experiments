@@ -1127,6 +1127,7 @@ bool VulkanBackend::createLogicalDevice() {
     device_features.samplerAnisotropy = VK_TRUE;
     device_features.sampleRateShading = VK_TRUE;
     device_features.geometryShader = VK_TRUE;
+    device_features.fragmentStoresAndAtomics = VK_TRUE;
 
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -1266,6 +1267,12 @@ bool VulkanBackend::createDescriptorPool(const DescriptorPoolConfig& config) {
         texel_pool.type = VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER;
         texel_pool.descriptorCount = config.storage_texel_buffers_count;
         pool_sizes.push_back(texel_pool);
+    }
+    if (config.image_storage_buffers_count > 0) {
+        VkDescriptorPoolSize image_buffers_pool;
+        image_buffers_pool.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        image_buffers_pool.descriptorCount = config.image_storage_buffers_count;
+        pool_sizes.push_back(image_buffers_pool);
     }
 
     VkDescriptorPoolCreateInfo pool_info{};

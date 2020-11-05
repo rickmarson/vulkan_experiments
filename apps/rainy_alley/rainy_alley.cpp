@@ -138,9 +138,11 @@ bool RainyAlley::setupScene() {
 	pool_config.uniform_buffers_count = scene_pool.uniform_buffers_count + emitter_pool.uniform_buffers_count + ui_pool.uniform_buffers_count;
 	pool_config.image_samplers_count = scene_pool.image_samplers_count + emitter_pool.image_samplers_count + ui_pool.image_samplers_count;
 	pool_config.storage_texel_buffers_count = emitter_pool.storage_texel_buffers_count;
-
+	pool_config.image_storage_buffers_count = scene_pool.image_storage_buffers_count + emitter_pool.image_storage_buffers_count;
+	
 	pool_config.uniform_buffers_count *= vulkan_backend_.getSwapChainSize();
 	pool_config.image_samplers_count *= vulkan_backend_.getSwapChainSize();
+	pool_config.image_storage_buffers_count *= vulkan_backend_.getSwapChainSize();
 	
 	vulkan_backend_.createDescriptorPool(pool_config);
 
@@ -193,9 +195,9 @@ bool RainyAlley::setupScene() {
 void RainyAlley::cleanupSwapChainAssets() {
 	imgui_renderer_->cleanupGraphicsPipeline();
 
-	scene_manager_->deleteUniformBuffer();
+	scene_manager_->deleteUniforms();
 	
-	rain_drops_emitter_->deleteUniformBuffer();
+	rain_drops_emitter_->deleteUniformBuffers();
 
 	vulkan_backend_.destroyRenderPass(render_pass_);
 	vulkan_backend_.destroyPipeline(alley_graphics_pipeline_);
@@ -220,7 +222,7 @@ void RainyAlley::updateScene() {
 
 	scene_manager_->update();
 
-	auto result = rain_drops_emitter_->update(delta_time_s);
+	auto result = rain_drops_emitter_->update(delta_time_s, scene_manager_->getSceneData());
 
 	// dispatch is handled here instead of within rain_drops_emitter_
 	// so that it's possible to stack multiple compute buffers in one queue.
@@ -238,7 +240,7 @@ bool RainyAlley::createGraphicsPipeline() {
 	if (!createRainDropsPipeline()) {
 		return false;
 	}
-	if (!rain_drops_emitter_->createComputePipeline()) {
+	if (!rain_drops_emitter_->createComputePipeline(scene_manager_->getSceneDepthBuffer())) {
 		return false;
 	}
 
@@ -258,7 +260,7 @@ bool RainyAlley::createAlleyGraphicsPipeline() {
 
 	alley_graphics_pipeline_ = vulkan_backend_.createGraphicsPipeline(config);
 
-	scene_manager_->createUniformBuffer();
+	scene_manager_->createUniforms();
 	scene_manager_->createDescriptorSets(alley_graphics_pipeline_.vk_descriptor_set_layouts);
 	scene_manager_->updateDescriptorSets(alley_graphics_pipeline_.descriptor_metadata);
 
@@ -281,7 +283,7 @@ bool RainyAlley::createRainDropsPipeline() {
 
 	rain_graphics_pipeline_ = vulkan_backend_.createGraphicsPipeline(config);
 
-	rain_drops_emitter_->createUniformBuffer();
+	rain_drops_emitter_->createUniformBuffers();
 	rain_drops_emitter_->createGraphicsDescriptorSets(rain_graphics_pipeline_.vk_descriptor_set_layouts);
 	rain_drops_emitter_->updateGraphicsDescriptorSets(rain_graphics_pipeline_.descriptor_metadata);
 
@@ -392,6 +394,8 @@ void RainyAlley::drawUi() {
 	const auto high_dpi_scale = imgui_renderer_->getHighDpiScale();
 	ImGui::SetNextWindowSizeConstraints(ImVec2(80 * high_dpi_scale, 80 * high_dpi_scale), ImVec2(100 * high_dpi_scale, 150 * high_dpi_scale));
 
+	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8, 0.35, 0.35, 1.0));
+
 	ImGui::Begin("Options");                   
 	
 	ImGui::End();
@@ -403,7 +407,7 @@ void RainyAlley::drawUi() {
 	ImGui::SetNextWindowSizeConstraints(ImVec2(stats_width, 120 * high_dpi_scale), ImVec2(stats_width, 150 * high_dpi_scale));
 
 	ImGui::Begin("Stats");
-
+	
 	ImGui::Text("Frame time: %.3f ms/frame", 1000.0f / ImGui::GetIO().Framerate);
 	ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
 	ImGui::Text("Rain update time: %.4f ms", time_to_exec_compute);
@@ -412,6 +416,8 @@ void RainyAlley::drawUi() {
 	ImGui::Text("UI draw time: %.4f ms", time_to_draw_ui);
 
 	ImGui::End();
+
+	ImGui::PopStyleColor();
 
 	imgui_renderer_->endFrame();
 }

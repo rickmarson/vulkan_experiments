@@ -198,7 +198,55 @@ void Texture::createDepthStencilAttachment(uint32_t width, uint32_t height, VkSa
     }
 
     transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+}
 
+void Texture::createDepthStorageImage(uint32_t width, uint32_t height) {
+    if (!isFormatSupported(backend_->getPhysicalDevice(),
+        VK_FORMAT_R32_SFLOAT,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)) {
+        std::cerr << "Error creating depth storage image" << std::endl;
+        std::cerr << "VK_FORMAT_R32_SFLOAT texture format is not supported as STORAGE_IMAGE on the selected device!" << std::endl;
+        return;
+    }
+
+    width_ = width;
+    height_ = height;
+    channels_ = 1;
+    mip_levels_ = 1;
+    vk_format_ = VK_FORMAT_R32_SFLOAT;
+    vk_usage_flags_ = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
+    vk_tiling_ = VK_IMAGE_TILING_OPTIMAL;
+    vk_mem_props_ = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    vk_descriptor_type_ = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+
+    if (!createImage()) {
+        if (vk_image_ != VK_NULL_HANDLE) {
+            vkDestroyImage(device_, vk_image_, nullptr);
+        }
+        return;
+    }
+
+    vk_image_view_ = backend_->createImageView(vk_image_, vk_format_, VK_IMAGE_ASPECT_COLOR_BIT);
+
+    if (vk_image_view_ == VK_NULL_HANDLE) {
+        vkDestroyImage(device_, vk_image_, nullptr);
+        vkFreeMemory(device_, vk_memory_, nullptr);
+    }
+
+    transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+
+    auto cmd_buffer = backend_->beginSingleTimeCommands();
+    VkClearColorValue clear_colour{};
+    clear_colour.float32[0] = 1.0f;
+    VkImageSubresourceRange range{};
+    range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    range.baseArrayLayer = 0;
+    range.baseMipLevel = 0;
+    range.layerCount = 1;
+    range.levelCount = 1;
+    vkCmdClearColorImage(cmd_buffer, vk_image_, VK_IMAGE_LAYOUT_GENERAL, &clear_colour, 1, &range);
+    backend_->endSingleTimeCommands(cmd_buffer);
 }
 
 bool Texture::createImage() {
@@ -281,6 +329,13 @@ void Texture::transitionImageLayout(VkImage image, VkFormat format, VkImageAspec
         src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     }
+    else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_GENERAL) {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    }
     else {
         std::cerr << "Unsupported layout transition!" << std::endl;
         return;
@@ -296,6 +351,8 @@ void Texture::transitionImageLayout(VkImage image, VkFormat format, VkImageAspec
     );
 
     backend_->endSingleTimeCommands(command_buffer);
+
+    vk_layout_ = new_layout;
 }
 
 void Texture::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
@@ -415,6 +472,8 @@ void Texture::generateMipMaps() {
         1, &barrier);
 
     backend_->endSingleTimeCommands(command_buffer);
+
+    vk_layout_ = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
 void Texture::createSampler() {
@@ -442,9 +501,9 @@ void Texture::createSampler() {
 }
 
 void Texture::updateDescriptorSets(std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding_point) {
-    for (size_t i = 0; i < backend_->getSwapChainSize(); i++) {
+    for (size_t i = 0; i < descriptor_sets.size(); i++) {
         VkDescriptorImageInfo image_info{};
-        image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        image_info.imageLayout = vk_layout_;
         image_info.imageView = vk_image_view_;
         image_info.sampler = vk_sampler_;
 
@@ -453,7 +512,7 @@ void Texture::updateDescriptorSets(std::vector<VkDescriptorSet>& descriptor_sets
         descriptor_write.dstSet = descriptor_sets[i];
         descriptor_write.dstBinding = binding_point;
         descriptor_write.dstArrayElement = 0;
-        descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptor_write.descriptorType = vk_descriptor_type_;
         descriptor_write.descriptorCount = 1;
         descriptor_write.pBufferInfo = nullptr; // Optional
         descriptor_write.pImageInfo = &image_info; 

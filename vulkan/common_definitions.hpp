@@ -61,6 +61,7 @@ struct DescriptorPoolConfig {
     uint32_t uniform_buffers_count = 0;
     uint32_t image_samplers_count = 0;
     uint32_t storage_texel_buffers_count = 0;
+    uint32_t image_storage_buffers_count = 0;
     uint32_t max_sets = 0;
 };
 
@@ -144,6 +145,7 @@ struct SceneData {
 
 const uint32_t SCENE_UNIFORM_SET_ID = 0;  // all scene-wide uniforms (lights, camera, etc.)
 const std::string SCENE_DATA_BINDING_NAME = "scene";  // holds scene-wide information (view, projection, lights, etc..)
+const std::string SCENE_DEPTH_BUFFER_STORAGE = "scene_depth_buffer";  // texel storage buffers used to store / load depth info across pipelines
 
 struct ModelData {
     glm::mat4 transform_matrix;
@@ -158,6 +160,10 @@ const std::string DIFFUSE_SAMPLER_BINDING_NAME = "diffuse_sampler";  // holds th
 const uint32_t COMPUTE_PARTICLE_BUFFER_SET_ID = 0;
 const std::string COMPUTE_PARTICLE_BUFFER_BINDING_NAME = "particle_buffer";
 const std::string COMPUTE_RESPAWN_BUFFER_BINDING_NAME = "respawn_buffer";
+
+const uint32_t COMPUTE_CAMERA_SET_ID = 1;  // camera / scene related data passed to compute shaders
+const std::string CAMERA_BINDING_NAME = "camera"; 
+// SCENE_DEPTH_BUFFER_STORAGE is also part of this set at binding 1, 1
 
 struct ParticlesGlobalState {
     uint32_t particles_count = 0;

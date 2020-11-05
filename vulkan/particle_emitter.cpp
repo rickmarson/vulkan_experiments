@@ -71,8 +71,8 @@ bool ParticleEmitter::createParticles(uint32_t count, const std::string& shader_
     std::vector<ParticleVertex> particles(count);
     for (uint32_t i = 0; i < count; ++i) {
         particles[i] = { 
-            glm::vec4(uniform_dist_x(e), uniform_dist_y(e), uniform_dist_z(e), 1.0),
-            glm::vec4(uniform_dist_vel_x(e), uniform_dist_vel_y(e), uniform_dist_vel_z(e), 0.0)
+            glm::vec4(uniform_dist_x(e), uniform_dist_y(e), uniform_dist_z(e), 0.0),   // w holds a collision flag
+            glm::vec4(uniform_dist_vel_x(e), uniform_dist_vel_y(e), uniform_dist_vel_z(e), 2.0)  // w holds the lifetime after collision, in s 
         };
     }
 
@@ -103,29 +103,36 @@ void ParticleEmitter::setTransform(const glm::mat4& transform) {
     model_data_.transform_matrix = transform;
 }
 
-RecordCommandsResult ParticleEmitter::update(float delta_time_s) {
+RecordCommandsResult ParticleEmitter::update(float delta_time_s,  const SceneData& scene_data) {
     for (size_t i = 0; i < backend_->getSwapChainSize(); i++) {
-        backend_->updateBuffer<ModelData>(uniform_buffer_.buffers[i], { model_data_ });
+        backend_->updateBuffer<ModelData>(graphics_uniform_buffer_.buffers[i], { model_data_ });
     }
 
+    compute_camera_.view_matrix = scene_data.view;
+    compute_camera_.proj_matrix = scene_data.proj;
+    compute_camera_.framebuffer_size = { backend_->getSwapChainExtent().width, backend_->getSwapChainExtent().height };
+    backend_->updateBuffer<CameraData>(compute_camera_buffer_.buffers[0], { compute_camera_ });
     global_state_pc_.delta_time_s = delta_time_s;
 
     // record compute commands now as they don't depend on the swapchain
     return recordComputeCommands();
 }
 
-void ParticleEmitter::createUniformBuffer() {
-    uniform_buffer_ = backend_->createUniformBuffer<ModelData>(config_.name + "_model_data"); // the buffer lifecycle is managed by the backend
+void ParticleEmitter::createUniformBuffers() {
+    graphics_uniform_buffer_ = backend_->createUniformBuffer<ModelData>(config_.name + "_model_data"); 
+    compute_camera_buffer_ = backend_->createUniformBuffer<CameraData>(config_.name + "_compute_camera", 1);
 }
 
-void ParticleEmitter::deleteUniformBuffer() {
-    backend_->destroyUniformBuffer(uniform_buffer_);
+void ParticleEmitter::deleteUniformBuffers() {
+    backend_->destroyUniformBuffer(graphics_uniform_buffer_);
+    backend_->destroyUniformBuffer(compute_camera_buffer_);
 }
 
 DescriptorPoolConfig ParticleEmitter::getDescriptorsCount() const {
     DescriptorPoolConfig config;
-    config.uniform_buffers_count = 1;
+    config.uniform_buffers_count = 2;
     config.storage_texel_buffers_count = 2;
+    config.image_storage_buffers_count = 1;
     return config;
 }
 
@@ -147,7 +154,7 @@ void ParticleEmitter::createGraphicsDescriptorSets(const std::map<uint32_t, VkDe
     vk_descriptor_sets_graphics_ = std::move(layout_descriptor_sets);
 }
 
-bool ParticleEmitter::createComputePipeline() {
+bool ParticleEmitter::createComputePipeline(std::shared_ptr<Texture>& scene_depth_buffer) {
     if (compute_pipeline_.vk_pipeline != VK_NULL_HANDLE) {
         backend_->destroyPipeline(compute_pipeline_);
     }
@@ -158,7 +165,7 @@ bool ParticleEmitter::createComputePipeline() {
     compute_pipeline_ = backend_->createComputePipeline(config);
 
     createComputeDescriptorSets(compute_pipeline_.vk_descriptor_set_layouts);
-    updateComputeDescriptorSets(compute_pipeline_.descriptor_metadata);
+    updateComputeDescriptorSets(compute_pipeline_.descriptor_metadata, scene_depth_buffer);
 
     return compute_pipeline_.vk_pipeline != VK_NULL_HANDLE;
 }
@@ -183,8 +190,9 @@ RecordCommandsResult ParticleEmitter::recordComputeCommands() {
     }
 
     vkCmdBindPipeline(compute_command_buffers_[0], VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_.vk_pipeline);
-    vkCmdBindDescriptorSets(compute_command_buffers_[0], VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_.vk_pipeline_layout, COMPUTE_PARTICLE_BUFFER_SET_ID, 1, &vk_descriptor_sets_compute_[0], 0, nullptr);
-    
+    vkCmdBindDescriptorSets(compute_command_buffers_[0], VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_.vk_pipeline_layout, COMPUTE_PARTICLE_BUFFER_SET_ID, 1, &vk_descriptor_sets_compute_[COMPUTE_PARTICLE_BUFFER_SET_ID], 0, nullptr);
+    vkCmdBindDescriptorSets(compute_command_buffers_[0], VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_.vk_pipeline_layout, COMPUTE_CAMERA_SET_ID, 1, &vk_descriptor_sets_compute_[COMPUTE_CAMERA_SET_ID], 0, nullptr);
+
     vkCmdPushConstants(compute_command_buffers_[0], compute_pipeline_.vk_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ParticlesGlobalState), &global_state_pc_);
 
     if (config_.profile) {
@@ -206,8 +214,9 @@ RecordCommandsResult ParticleEmitter::recordComputeCommands() {
 }
 
 void ParticleEmitter::createComputeDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {
-    const auto& layout = descriptor_set_layouts.find(COMPUTE_PARTICLE_BUFFER_SET_ID)->second;
-    std::vector<VkDescriptorSetLayout> layouts(1, layout);
+    const auto& particle_buffers_layout = descriptor_set_layouts.find(COMPUTE_PARTICLE_BUFFER_SET_ID)->second;
+    const auto& camera_layout = descriptor_set_layouts.find(COMPUTE_CAMERA_SET_ID)->second;
+    std::vector<VkDescriptorSetLayout> layouts = { particle_buffers_layout, camera_layout };
     VkDescriptorSetAllocateInfo alloc_info{};
     alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     alloc_info.descriptorPool = backend_->getDescriptorPool();
@@ -225,12 +234,17 @@ void ParticleEmitter::createComputeDescriptorSets(const std::map<uint32_t, VkDes
 
 void ParticleEmitter::updateGraphicsDescriptorSets(const DescriptorSetMetadata& metadata) {
     const auto& bindings = metadata.set_bindings.find(MODEL_UNIFORM_SET_ID)->second;
-    backend_->updateDescriptorSets(uniform_buffer_, vk_descriptor_sets_graphics_, bindings.find(MODEL_DATA_BINDING_NAME)->second);
+    backend_->updateDescriptorSets(graphics_uniform_buffer_, vk_descriptor_sets_graphics_, bindings.find(MODEL_DATA_BINDING_NAME)->second);
     // getDiffuseTexture()->updateDescriptorSets(vk_descriptor_sets_, bindings.find(DIFFUSE_SAMPLER_BINDING_NAME)->second);
 }
 
-void ParticleEmitter::updateComputeDescriptorSets(const DescriptorSetMetadata& metadata) {
-    const auto& bindings = metadata.set_bindings.find(COMPUTE_PARTICLE_BUFFER_SET_ID)->second;
-    backend_->updateDescriptorSets(particle_buffer_, vk_descriptor_sets_compute_, bindings.find(COMPUTE_PARTICLE_BUFFER_BINDING_NAME)->second);
-    backend_->updateDescriptorSets(particle_respawn_buffer_, vk_descriptor_sets_compute_, bindings.find(COMPUTE_RESPAWN_BUFFER_BINDING_NAME)->second);
+void ParticleEmitter::updateComputeDescriptorSets(const DescriptorSetMetadata& metadata, std::shared_ptr<Texture>& scene_depth_buffer) {
+    const auto& particles_bindings = metadata.set_bindings.find(COMPUTE_PARTICLE_BUFFER_SET_ID)->second;
+    auto particles_set = std::vector<VkDescriptorSet>{vk_descriptor_sets_compute_[COMPUTE_PARTICLE_BUFFER_SET_ID]};
+    backend_->updateDescriptorSets(particle_buffer_, particles_set, particles_bindings.find(COMPUTE_PARTICLE_BUFFER_BINDING_NAME)->second);
+    backend_->updateDescriptorSets(particle_respawn_buffer_, particles_set, particles_bindings.find(COMPUTE_RESPAWN_BUFFER_BINDING_NAME)->second);
+    const auto& camera_bindings = metadata.set_bindings.find(COMPUTE_CAMERA_SET_ID)->second;
+    auto camera_set = std::vector<VkDescriptorSet>{vk_descriptor_sets_compute_[COMPUTE_CAMERA_SET_ID]};
+    backend_->updateDescriptorSets(compute_camera_buffer_, camera_set, camera_bindings.find(CAMERA_BINDING_NAME)->second);
+    scene_depth_buffer->updateDescriptorSets(camera_set, camera_bindings.find(SCENE_DEPTH_BUFFER_STORAGE)->second);
 }

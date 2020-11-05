@@ -103,16 +103,19 @@ public:
     Pipeline createComputePipeline(const ComputePipelineConfig& config);
 
     template<typename DataType>
-    Buffer createVertexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool host_visible = true, bool compute_visible = false);
+    Buffer createVertexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool host_visible = false, bool compute_visible = false);
 
     template<typename DataType>
-    Buffer createIndexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool host_visible = true);
+    Buffer createIndexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool host_visible = false);
+
+    template<typename DataType>
+    Buffer createStorageTexelBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool host_visible = false);
 
     template<typename DataType>
     void updateBuffer(Buffer& dst_buffer, const std::vector<DataType>& src_buffer);
 
     template<typename DataType>
-    UniformBuffer createUniformBuffer(const std::string base_name);
+    UniformBuffer createUniformBuffer(const std::string base_name, size_t count = 0);
 
     bool createBufferView(Buffer& buffer, VkFormat format);
     
@@ -223,7 +226,7 @@ Buffer VulkanBackend::createVertexBuffer(const std::string& name, const std::vec
         final_usage_flags |= VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT;
     }
 
-    if (host_visible) {
+    if (!host_visible) {
         Buffer staging_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, true);
         updateBuffer<DataType>(staging_buffer, src_buffer);
         Buffer vertex_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_DST_BIT | final_usage_flags, VK_SHARING_MODE_EXCLUSIVE, false);
@@ -239,7 +242,7 @@ Buffer VulkanBackend::createVertexBuffer(const std::string& name, const std::vec
 
 template<typename DataType>
 Buffer VulkanBackend::createIndexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool host_visible) {
-    if (host_visible) {
+    if (!host_visible) {
         Buffer staging_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, true);
         updateBuffer<DataType>(staging_buffer, src_buffer);
         Buffer index_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_SHARING_MODE_EXCLUSIVE, false);
@@ -250,6 +253,24 @@ Buffer VulkanBackend::createIndexBuffer(const std::string& name, const std::vect
         Buffer index_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_SHARING_MODE_EXCLUSIVE, true);
         updateBuffer<DataType>(index_buffer, src_buffer);
         return index_buffer;
+    }
+}
+
+template<typename DataType>
+Buffer VulkanBackend::createStorageTexelBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool host_visible) {
+    VkBufferUsageFlags final_usage_flags = VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT;
+
+    if (!host_visible) {
+        Buffer staging_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, true);
+        updateBuffer<DataType>(staging_buffer, src_buffer);
+        Buffer vertex_buffer = createBuffer<DataType>(name, src_buffer, VK_BUFFER_USAGE_TRANSFER_DST_BIT | final_usage_flags, VK_SHARING_MODE_EXCLUSIVE, false);
+        copyBufferToGpuLocalMemory(staging_buffer.vk_buffer, vertex_buffer.vk_buffer, sizeof(DataType) * src_buffer.size());
+        destroyBuffer(staging_buffer);
+        return vertex_buffer;
+    } else {
+        Buffer vertex_buffer = createBuffer<DataType>(name, src_buffer, final_usage_flags, VK_SHARING_MODE_EXCLUSIVE, true);
+        updateBuffer<DataType>(vertex_buffer, src_buffer);
+        return vertex_buffer;
     }
 }
 
@@ -313,7 +334,7 @@ void VulkanBackend::updateBuffer(Buffer& dst_buffer, const std::vector<DataType>
 }
 
 template<typename DataType>
-UniformBuffer VulkanBackend::createUniformBuffer(const std::string base_name) {
+UniformBuffer VulkanBackend::createUniformBuffer(const std::string base_name, size_t count) {
     std::vector<Buffer> buffers;
     
     VkBufferCreateInfo buffer_info{};
@@ -323,7 +344,8 @@ UniformBuffer VulkanBackend::createUniformBuffer(const std::string base_name) {
     buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     VkMemoryPropertyFlags mem_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
-    for (size_t i = 0; i < swap_chain_images_.size(); i++) {
+    count = count > 0 ? count : swap_chain_images_.size();
+    for (size_t i = 0; i < count; i++) {
         auto name = base_name + std::to_string(i);
 
         VkBuffer vk_buffer;

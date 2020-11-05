@@ -37,27 +37,27 @@ public:
 	const std::string& getName() const { return config_.name; }
 	
 	void setTransform(const glm::mat4& transform);
-	RecordCommandsResult update(float delta_time_s);
+	RecordCommandsResult update(float delta_time_s, const SceneData& scene_data);
 
 	bool createParticles(uint32_t count, const std::string& shader_file);
 	const Buffer& getVertexBuffer() const { return particle_buffer_; }
 	uint32_t getVertexCount() const { return global_state_pc_.particles_count; }
 	
-	void createUniformBuffer();
-	void deleteUniformBuffer();
+	void createUniformBuffers();
+	void deleteUniformBuffers();
 	DescriptorPoolConfig getDescriptorsCount() const;
 	void createGraphicsDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
 	void updateGraphicsDescriptorSets(const DescriptorSetMetadata& metadata);
 	std::vector<VkDescriptorSet>& getGraphicsDescriptorSets() { return vk_descriptor_sets_graphics_; }
 	
 	std::shared_ptr<Texture> getTexture() { return texture_; }
-	const UniformBuffer& getUniformBuffer() const { return uniform_buffer_; }
+	const UniformBuffer& getUniformBuffer() const { return graphics_uniform_buffer_; }
 
-	bool createComputePipeline();
+	bool createComputePipeline(std::shared_ptr<Texture>& scene_depth_buffer);
 
 private:
 	void createComputeDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
-	void updateComputeDescriptorSets(const DescriptorSetMetadata& metadata);
+	void updateComputeDescriptorSets(const DescriptorSetMetadata& metadata, std::shared_ptr<Texture>& scene_depth_buffer);
 	RecordCommandsResult recordComputeCommands();
 
 	ParticleEmitterConfig config_;
@@ -68,9 +68,16 @@ private:
 	std::shared_ptr<Texture> texture_;
 
 	ModelData model_data_;
-	UniformBuffer uniform_buffer_;
+	UniformBuffer graphics_uniform_buffer_;
 	std::vector<VkDescriptorSet> vk_descriptor_sets_graphics_;
 	std::vector<VkDescriptorSet> vk_descriptor_sets_compute_;
+
+	struct CameraData {
+		glm::mat4 view_matrix; 
+		glm::mat4 proj_matrix;
+		glm::ivec2 framebuffer_size;
+	} compute_camera_;  
+	UniformBuffer compute_camera_buffer_;
 
 	ParticlesGlobalState global_state_pc_;
 
