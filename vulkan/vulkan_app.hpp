@@ -37,8 +37,8 @@ protected:
     virtual void cleanup() = 0;
 
     // window
-    const uint32_t WIDTH = 1600;
-    const uint32_t HEIGHT = 1200;
+    const uint32_t base_width_ = 800;
+    const uint32_t base_height_ = 600;
     GLFWwindow* window_ = nullptr;
     bool window_resized_ = false;
     std::string window_title_;

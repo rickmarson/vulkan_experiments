@@ -77,10 +77,24 @@ bool VulkanApp::run() {
 void VulkanApp::createWindow() {
     glfwInit();
 
+    auto monitor = glfwGetPrimaryMonitor();
+    const auto video_mode = glfwGetVideoMode(monitor);
+    float width_scale, height_scale;
+    glfwGetMonitorContentScale(monitor, &width_scale, &height_scale);
+    
+    auto monitor_height = video_mode->height * height_scale;
+    auto window_width = base_width_;
+    auto window_height = base_height_;
+
+    if (monitor_height > 1080.0f) {
+        window_width *= 2;
+        window_height *= 2;
+    }
+
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);  // on Linux for some reason GLFW_TRUE causes the window to be resized to fullscreen \o/
    
-    window_ = glfwCreateWindow(WIDTH, HEIGHT, window_title_.c_str(), nullptr, nullptr);
+    window_ = glfwCreateWindow(window_width, window_height, window_title_.c_str(), nullptr, nullptr);
     glfwSetWindowUserPointer(window_, this);
     glfwSetFramebufferSizeCallback(window_, framebufferResizeCallback);
 }

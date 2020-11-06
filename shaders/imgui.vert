@@ -20,10 +20,10 @@ layout(location = 0) out struct {
 void main()
 {
     outputs.color = vec4(
-        (in_color & uint(0xFF000000)) / 255.0,
-        (in_color & uint(0x00FF0000)) / 255.0,
-        (in_color & uint(0x0000FF00)) / 255.0,
-        (in_color & uint(0x000000FF)) / 255.0
+        ((in_color >> 0) & 0xFF) / 255.0,
+        ((in_color >> 8) & 0xFF) / 255.0,
+        ((in_color >> 16) & 0xFF) / 255.0,
+        ((in_color >> 24) & 0xFF) / 255.0
     );
 
     outputs.uv = in_uv;

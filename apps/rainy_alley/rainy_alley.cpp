@@ -394,8 +394,6 @@ void RainyAlley::drawUi() {
 	const auto high_dpi_scale = imgui_renderer_->getHighDpiScale();
 	ImGui::SetNextWindowSizeConstraints(ImVec2(80 * high_dpi_scale, 80 * high_dpi_scale), ImVec2(100 * high_dpi_scale, 150 * high_dpi_scale));
 
-	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8, 0.35, 0.35, 1.0));
-
 	ImGui::Begin("Options");                   
 	
 	ImGui::End();
@@ -408,6 +406,8 @@ void RainyAlley::drawUi() {
 
 	ImGui::Begin("Stats");
 	
+	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8, 0.35, 0.35, 1.0));
+
 	ImGui::Text("Frame time: %.3f ms/frame", 1000.0f / ImGui::GetIO().Framerate);
 	ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
 	ImGui::Text("Rain update time: %.4f ms", time_to_exec_compute);
@@ -415,9 +415,9 @@ void RainyAlley::drawUi() {
 	ImGui::Text("Rain draw time: %.4f ms", time_to_draw_particles);
 	ImGui::Text("UI draw time: %.4f ms", time_to_draw_ui);
 
-	ImGui::End();
-
 	ImGui::PopStyleColor();
+
+	ImGui::End();
 
 	imgui_renderer_->endFrame();
 }
