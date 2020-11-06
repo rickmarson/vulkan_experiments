@@ -7,6 +7,7 @@ layout(location = 0) in vec4 in_position;
 layout(location = 1) in vec4 in_velocity;
 
 layout(location = 0) out vec4 out_colour;
+layout(location = 1) out mat4 out_proj;
 
 layout(set = 0, binding = 0) uniform SceneData {
     mat4 view;
@@ -23,6 +24,7 @@ void main() {
     worldToVulkan(model_view);
     projectionToVulkan(proj);
 
-    gl_Position = proj * model_view * vec4(in_position.xyz, 1.0);
+    gl_Position = model_view * vec4(in_position.xyz, 1.0);
     out_colour = vec4(1.0, in_position.w, 0.0, 1.0);
+    out_proj = proj;
 }
