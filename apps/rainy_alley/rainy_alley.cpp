@@ -103,6 +103,7 @@ bool RainyAlley::loadAssets() {
 	emitter_config.max_box_extent = glm::vec3(2.0f, 8.0, 20.0f);
 	emitter_config.min_starting_velocity = glm::vec3(0.0f, 0.0f, -10.0f);
 	emitter_config.max_starting_velocity = glm::vec3(0.0f, 0.0f, 0.0f);
+	emitter_config.texture_atlas = "textures/rain_drops.png";
 
 #ifndef NDEBUG
 	vulkan_backend_.enableTimestampQueries(8);

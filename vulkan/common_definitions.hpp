@@ -157,6 +157,9 @@ const std::string MODEL_DATA_BINDING_NAME = "model";  // holds model-specific nu
 const uint32_t SURFACE_UNIFORM_SET_ID = 2;  // all samplers that apply to one surface (one object can have multiple surfaces)
 const std::string DIFFUSE_SAMPLER_BINDING_NAME = "diffuse_sampler";  // holds the diffuse texture of the surface / mesh being drawn
 
+const uint32_t PARTICLES_UNIFORM_SET_ID = 1;
+const std::string PARTICLES_TEXTURE_ATLAS_BINDING_NAME = "texture_atlas";
+
 const uint32_t COMPUTE_PARTICLE_BUFFER_SET_ID = 0;
 const std::string COMPUTE_PARTICLE_BUFFER_BINDING_NAME = "particle_buffer";
 const std::string COMPUTE_RESPAWN_BUFFER_BINDING_NAME = "respawn_buffer";

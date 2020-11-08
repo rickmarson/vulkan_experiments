@@ -20,7 +20,7 @@ std::shared_ptr<ParticleEmitter> ParticleEmitter::createParticleEmitter(const Pa
 ParticleEmitter::ParticleEmitter(const ParticleEmitterConfig& config, VulkanBackend* backend) :
     config_(config),
     backend_(backend) {
-    model_data_.transform_matrix = config.starting_transform;
+    transform_ = config.starting_transform;
 }
 
 ParticleEmitter::~ParticleEmitter() {
@@ -30,7 +30,7 @@ ParticleEmitter::~ParticleEmitter() {
     backend_->destroyBuffer(particle_buffer_);
     backend_->destroyBuffer(particle_respawn_buffer_);
     backend_->freeCommandBuffers(compute_command_buffers_);
-    texture_.reset();
+    texture_atlas_.reset();
     compute_shader_.reset();
 }
 
@@ -72,7 +72,7 @@ bool ParticleEmitter::createParticles(uint32_t count, const std::string& shader_
     for (uint32_t i = 0; i < count; ++i) {
         particles[i] = { 
             glm::vec4(uniform_dist_x(e), uniform_dist_y(e), uniform_dist_z(e), 0.0),   // w holds a collision flag
-            glm::vec4(uniform_dist_vel_x(e), uniform_dist_vel_y(e), uniform_dist_vel_z(e), 2.0)  // w holds the lifetime after collision, in s 
+            glm::vec4(uniform_dist_vel_x(e), uniform_dist_vel_y(e), uniform_dist_vel_z(e), 0.8)  // w holds the lifetime after collision, in s 
         };
     }
 
@@ -90,6 +90,12 @@ bool ParticleEmitter::createParticles(uint32_t count, const std::string& shader_
         return false;
     }
 
+    if (!config_.texture_atlas.empty()) {
+        texture_atlas_ = backend_->createTexture(config_.name + "_texture_atlas");
+        texture_atlas_->loadImageRGBA(config_.texture_atlas);
+        texture_atlas_->createSampler();
+    }
+
     // create a compute pipeline for this emitter 
     compute_shader_ = backend_->createShaderModule(config_.name + "_compute_shader");
     compute_shader_->loadSpirvShader(shader_file);
@@ -100,14 +106,10 @@ bool ParticleEmitter::createParticles(uint32_t count, const std::string& shader_
 }
 
 void ParticleEmitter::setTransform(const glm::mat4& transform) {
-    model_data_.transform_matrix = transform;
+    transform_ = transform;
 }
 
 RecordCommandsResult ParticleEmitter::update(float delta_time_s,  const SceneData& scene_data) {
-    for (size_t i = 0; i < backend_->getSwapChainSize(); i++) {
-        backend_->updateBuffer<ModelData>(graphics_uniform_buffer_.buffers[i], { model_data_ });
-    }
-
     compute_camera_.view_matrix = scene_data.view;
     compute_camera_.proj_matrix = scene_data.proj;
     compute_camera_.framebuffer_size = { backend_->getSwapChainExtent().width, backend_->getSwapChainExtent().height };
@@ -119,7 +121,6 @@ RecordCommandsResult ParticleEmitter::update(float delta_time_s,  const SceneDat
 }
 
 void ParticleEmitter::createUniformBuffers() {
-    graphics_uniform_buffer_ = backend_->createUniformBuffer<ModelData>(config_.name + "_model_data"); 
     compute_camera_buffer_ = backend_->createUniformBuffer<CameraData>(config_.name + "_compute_camera", 1);
 }
 
@@ -130,19 +131,20 @@ void ParticleEmitter::deleteUniformBuffers() {
 
 DescriptorPoolConfig ParticleEmitter::getDescriptorsCount() const {
     DescriptorPoolConfig config;
-    config.uniform_buffers_count = 2;
+    config.uniform_buffers_count = 1;
+    config.image_samplers_count = 1;
     config.storage_texel_buffers_count = 2;
     config.image_storage_buffers_count = 1;
     return config;
 }
 
 void ParticleEmitter::createGraphicsDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {
-    const auto& layout = descriptor_set_layouts.find(MODEL_UNIFORM_SET_ID)->second;
+    const auto& layout = descriptor_set_layouts.find(PARTICLES_UNIFORM_SET_ID)->second;
     std::vector<VkDescriptorSetLayout> layouts(backend_->getSwapChainSize(), layout);
     VkDescriptorSetAllocateInfo alloc_info{};
     alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     alloc_info.descriptorPool = backend_->getDescriptorPool();
-    alloc_info.descriptorSetCount = backend_->getSwapChainSize();
+    alloc_info.descriptorSetCount = static_cast<uint32_t>(layouts.size());
     alloc_info.pSetLayouts = layouts.data();
 
     std::vector<VkDescriptorSet> layout_descriptor_sets(backend_->getSwapChainSize());
@@ -233,9 +235,8 @@ void ParticleEmitter::createComputeDescriptorSets(const std::map<uint32_t, VkDes
 }
 
 void ParticleEmitter::updateGraphicsDescriptorSets(const DescriptorSetMetadata& metadata) {
-    const auto& bindings = metadata.set_bindings.find(MODEL_UNIFORM_SET_ID)->second;
-    backend_->updateDescriptorSets(graphics_uniform_buffer_, vk_descriptor_sets_graphics_, bindings.find(MODEL_DATA_BINDING_NAME)->second);
-    // getDiffuseTexture()->updateDescriptorSets(vk_descriptor_sets_, bindings.find(DIFFUSE_SAMPLER_BINDING_NAME)->second);
+    const auto& bindings = metadata.set_bindings.find(PARTICLES_UNIFORM_SET_ID)->second;
+    texture_atlas_->updateDescriptorSets(vk_descriptor_sets_graphics_, bindings.find(PARTICLES_TEXTURE_ATLAS_BINDING_NAME)->second);
 }
 
 void ParticleEmitter::updateComputeDescriptorSets(const DescriptorSetMetadata& metadata, std::shared_ptr<Texture>& scene_depth_buffer) {

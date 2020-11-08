@@ -20,6 +20,7 @@ file(GLOB SHADERS "${CMAKE_SOURCE_DIR}/shaders/alley_vs.spv"
 set(SHADERS ${SHADERS} ${IMGUI_SHADERS})
 
 file(GLOB OBJECTS "${CMAKE_SOURCE_DIR}/meshes/alley.glb")
+file(GLOB TEXTURES "${CMAKE_SOURCE_DIR}/textures/rain_drops.png")
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/shaders/)
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/meshes/)

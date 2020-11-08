@@ -21,6 +21,8 @@ struct ParticleEmitterConfig {
 	glm::vec3 min_starting_velocity;
 	glm::vec3 max_starting_velocity;
 
+	std::string texture_atlas;
+
 	// profiler settings
 	bool profile = false;
 	uint32_t start_query_num = 0;
@@ -50,7 +52,7 @@ public:
 	void updateGraphicsDescriptorSets(const DescriptorSetMetadata& metadata);
 	std::vector<VkDescriptorSet>& getGraphicsDescriptorSets() { return vk_descriptor_sets_graphics_; }
 	
-	std::shared_ptr<Texture> getTexture() { return texture_; }
+	std::shared_ptr<Texture> getTexture() { return texture_atlas_; }
 	const UniformBuffer& getUniformBuffer() const { return graphics_uniform_buffer_; }
 
 	bool createComputePipeline(std::shared_ptr<Texture>& scene_depth_buffer);
@@ -61,14 +63,14 @@ private:
 	RecordCommandsResult recordComputeCommands();
 
 	ParticleEmitterConfig config_;
+	glm::mat4 transform_;
 
 	VulkanBackend* backend_;
 	Buffer particle_buffer_;
 	Buffer particle_respawn_buffer_;
-	std::shared_ptr<Texture> texture_;
+	std::shared_ptr<Texture> texture_atlas_;
 
-	ModelData model_data_;
-	UniformBuffer graphics_uniform_buffer_;
+	UniformBuffer graphics_uniform_buffer_; // unused for now
 	std::vector<VkDescriptorSet> vk_descriptor_sets_graphics_;
 	std::vector<VkDescriptorSet> vk_descriptor_sets_compute_;
 
