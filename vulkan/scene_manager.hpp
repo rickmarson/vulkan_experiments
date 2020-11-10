@@ -33,6 +33,10 @@ public:
 	void setCameraPosition(const glm::vec3& pos);
 	void setCameraTarget(const glm::vec3& target);
 	void setCameraTransform(const glm::mat4 transform);
+
+	void setLightPosition(const glm::vec3 pos);
+	void setLightColour(const glm::vec4 colour);
+
 	const SceneData& getSceneData() const { return scene_data_; }
 
 	DescriptorPoolConfig getDescriptorsCount() const;
@@ -68,6 +72,7 @@ private:
 	std::vector<std::shared_ptr<Material>> materials_;
 	std::vector<std::shared_ptr<StaticMesh>> meshes_;
 
+	float gltf_scale_factor_ = 1.0f;
 	glm::vec3 camera_position_ = { 0.0f, 0.0f, 0.0f };
 	glm::vec3 camera_forward_ = { 1.0f, 0.0f, 0.0f };
 	glm::vec3 camera_up_ = { 0.0f, 0.0f, 1.0f };

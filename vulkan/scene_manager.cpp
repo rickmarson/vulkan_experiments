@@ -189,6 +189,27 @@ namespace {
         }
     }
 
+    float getGlobalScaleFactor(gltf::Model& model) {
+        auto& scene = model.scenes[0];
+        auto& node = model.nodes[scene.nodes[0]];
+
+        if (node.scale.size() == 3) {
+            auto gltf_scale = glm::make_vec3(node.scale.data());
+            auto sc = glm::vec3(0.0f);
+            sc[0] = gltf_scale[2];
+            sc[1] = gltf_scale[0];
+            sc[2] = gltf_scale[1];
+
+            if (std::abs(sc[0] - sc[1]) > 1e-6 || std::abs(sc[1] - sc[2]) > 1e-6) {
+                std::cerr << "Error: non-uniform scaling is not supported!" << std::endl;
+            }
+
+            return sc[0];
+        }
+
+        return 1.0f;
+    }
+
 }
 
 std::unique_ptr<SceneManager> SceneManager::create(VulkanBackend* backend) {
@@ -203,6 +224,9 @@ SceneManager::SceneManager(VulkanBackend* backend) :
 SceneManager::~SceneManager() {
     backend_->destroyBuffer(scene_index_buffer_);
     backend_->destroyBuffer(scene_vertex_buffer_);
+    for (auto& mat : materials_) {
+        backend_->destroyUniformBuffer(mat->material_uniform);
+    }
     materials_.clear();
     meshes_.clear();
     textures_.clear();
@@ -257,10 +281,15 @@ bool SceneManager::loadFromGlb(const std::string& file_path) {
             material->emissive_texture = textures_[gltf_mat.values["occlusionTexture"].TextureIndex()];
         }
         if (gltf_mat.values.find("baseColorFactor") != gltf_mat.values.end()) {
-            material->diffuse_factor = glm::make_vec4(gltf_mat.values["baseColorFactor"].ColorFactor().data());
+            material->material_data.diffuse_factor = glm::make_vec4(gltf_mat.values["baseColorFactor"].ColorFactor().data());
         }
         if (gltf_mat.values.find("emissiveFactor") != gltf_mat.values.end()) {
-            material->emissive_factor = glm::make_vec4(gltf_mat.values["emissiveFactor"].ColorFactor().data());
+            //material->material_data.emissive_factor = glm::make_vec4(gltf_mat.values["emissiveFactor"].ColorFactor().data());
+        }
+
+        material->material_uniform = backend_->createUniformBuffer<MaterialData>("material_" + std::to_string(materials_.size()));
+        for (size_t i = 0; i < backend_->getSwapChainSize(); i++) {
+            backend_->updateBuffer<MaterialData>(material->material_uniform.buffers[i], { material->material_data });
         }
 
         materials_.push_back(std::move(material));
@@ -272,6 +301,9 @@ bool SceneManager::loadFromGlb(const std::string& file_path) {
 
     // load all meshes for one scene. only handles static meshes, no animations, no skins
     // flatten the scene graph into a list of mesh nodes
+    gltf_scale_factor_ = getGlobalScaleFactor(gltf_model);
+    setLightPosition(scene_data_.light_position);
+
     auto& scene = gltf_model.scenes[0];
     for (auto n : scene.nodes) {
         auto& gltf_node = gltf_model.nodes[n];
@@ -323,6 +355,16 @@ void SceneManager::setCameraTarget(const glm::vec3& target) {
 
 void SceneManager::setCameraTransform(const glm::mat4 transform) {
     camera_transform_ = transform;
+}
+
+void SceneManager::setLightPosition(const glm::vec3 pos) {
+    // need the light position to be consistent with the scene scale factor or it
+    // will be off once it goes through the model matrix
+    scene_data_.light_position = glm::vec4(pos / gltf_scale_factor_, 1.0f);
+}
+
+void SceneManager::setLightColour(const glm::vec4 colour) {
+    scene_data_.light_colour = colour;
 }
 
 DescriptorPoolConfig SceneManager::getDescriptorsCount() const {

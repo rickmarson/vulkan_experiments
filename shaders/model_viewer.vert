@@ -14,11 +14,17 @@ layout(location = 1) out vec2 frag_tex_coord;
 layout(set = 0, binding = 0) uniform SceneData {
     mat4 view;
     mat4 proj;
+    vec3 light_position; // unused
+    vec4 light_colour; // unused
 } scene;
 
 layout(set = 1, binding = 1) uniform ModelData {
     mat4 transform;
 } model;
+
+layout(set = 2, binding = 0) uniform MaterialData {
+    vec4 diffuse_factor; // unused
+} material;
 
 const vec3 colour = vec3(1.0, 1.0, 1.0);
 

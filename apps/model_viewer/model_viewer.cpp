@@ -99,8 +99,18 @@ bool ModelViewer::loadAssets() {
 
 bool ModelViewer::setupScene() {
 	DescriptorPoolConfig pool_config;
-	pool_config.uniform_buffers_count = 2 * vulkan_backend_.getSwapChainSize();
-	pool_config.image_samplers_count = 2 * vulkan_backend_.getSwapChainSize();
+
+	auto scene_pool = scene_manager_->getDescriptorsCount();
+	auto ui_pool = imgui_renderer_->getDescriptorsCount();
+
+	pool_config.uniform_buffers_count = scene_pool.uniform_buffers_count + ui_pool.uniform_buffers_count;
+	pool_config.image_samplers_count = scene_pool.image_samplers_count + ui_pool.image_samplers_count;
+	pool_config.image_storage_buffers_count = scene_pool.image_storage_buffers_count;
+	
+	pool_config.uniform_buffers_count *= vulkan_backend_.getSwapChainSize();
+	pool_config.image_samplers_count *= vulkan_backend_.getSwapChainSize();
+	pool_config.image_storage_buffers_count *= vulkan_backend_.getSwapChainSize();
+
 	vulkan_backend_.createDescriptorPool(pool_config);
 
 	RenderPassConfig render_pass_config;

@@ -13,6 +13,8 @@ layout(location = 5) out uint out_texture_idx;
 layout(set = 0, binding = 0) uniform SceneData {
     mat4 view;
     mat4 proj;
+    vec3 light_position;
+    vec4 light_colour;
 } scene;
 
 void main() {

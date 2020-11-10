@@ -30,15 +30,6 @@
 using VertexFormatInfo = std::pair<size_t, std::vector<size_t>>;
 class Texture;
 
-struct Material {
-    std::weak_ptr<Texture> diffuse_texture;
-    std::weak_ptr<Texture> normal_texture;
-    std::weak_ptr<Texture> occlusion_texture;
-    std::weak_ptr<Texture> emissive_texture;
-    glm::vec4 diffuse_factor = glm::vec4(1.0f);
-    glm::vec4 emissive_factor = glm::vec4(1.0f);
-};
-
 struct Buffer {
     std::string name;
     bool host_visible = false;
@@ -55,6 +46,21 @@ struct UniformBuffer {
     size_t buffer_size = 0;
 
     std::vector<Buffer> buffers;  // one per command buffer / swap chain image
+};
+
+
+struct MaterialData {
+    glm::vec4 diffuse_factor = glm::vec4(1.0f);;
+};
+
+struct Material {
+    std::weak_ptr<Texture> diffuse_texture;
+    std::weak_ptr<Texture> normal_texture;
+    std::weak_ptr<Texture> occlusion_texture;
+    std::weak_ptr<Texture> emissive_texture;
+    MaterialData material_data;
+    UniformBuffer material_uniform;
+    //glm::vec4 emissive_factor = glm::vec4(1.0f);
 };
 
 struct DescriptorPoolConfig {
@@ -141,6 +147,8 @@ struct ParticleVertex {
 struct SceneData {
     glm::mat4 view = glm::mat4(1.0f);
     glm::mat4 proj = glm::mat4(1.0f);
+    glm::vec4 light_position = glm::vec4(0.0f);
+    glm::vec4 light_colour = glm::vec4(1.0f);
 };
 
 const uint32_t SCENE_UNIFORM_SET_ID = 0;  // all scene-wide uniforms (lights, camera, etc.)
@@ -155,6 +163,7 @@ const uint32_t MODEL_UNIFORM_SET_ID = 1;  // all uniforms that apply to one obje
 const std::string MODEL_DATA_BINDING_NAME = "model";  // holds model-specific numeric data (model transform, etc...)
 
 const uint32_t SURFACE_UNIFORM_SET_ID = 2;  // all samplers that apply to one surface (one object can have multiple surfaces)
+const std::string SURFACE_MATERIAL_BINDING_NAME = "material";
 const std::string DIFFUSE_SAMPLER_BINDING_NAME = "diffuse_sampler";  // holds the diffuse texture of the surface / mesh being drawn
 
 const uint32_t PARTICLES_UNIFORM_SET_ID = 1;
