@@ -20,6 +20,7 @@ public:
 
     const std::string& getName() const { return name_; }
     void loadImageRGBA(const std::string& src_image_path, bool generateMipMaps = true);
+    void loadImageRGBA(uint32_t width, uint32_t height, bool genMipMaps, glm::vec4 fill_colour);
     void loadImageRGBA(uint32_t width, uint32_t height, uint32_t channels, bool genMipMaps, const std::vector<unsigned char>& pixels);
     void createColourAttachment(uint32_t width, uint32_t height, VkFormat format, VkSampleCountFlagBits num_samples);
     void createDepthStencilAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits num_samples);

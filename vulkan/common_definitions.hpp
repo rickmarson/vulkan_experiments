@@ -48,19 +48,12 @@ struct UniformBuffer {
     std::vector<Buffer> buffers;  // one per command buffer / swap chain image
 };
 
-
-struct MaterialData {
-    glm::vec4 diffuse_factor = glm::vec4(1.0f);;
-};
-
 struct Material {
     std::weak_ptr<Texture> diffuse_texture;
+    std::weak_ptr<Texture> metal_rough_texture;
     std::weak_ptr<Texture> normal_texture;
     std::weak_ptr<Texture> occlusion_texture;
     std::weak_ptr<Texture> emissive_texture;
-    MaterialData material_data;
-    UniformBuffer material_uniform;
-    //glm::vec4 emissive_factor = glm::vec4(1.0f);
 };
 
 struct DescriptorPoolConfig {
@@ -148,7 +141,8 @@ struct SceneData {
     glm::mat4 view = glm::mat4(1.0f);
     glm::mat4 proj = glm::mat4(1.0f);
     glm::vec4 light_position = glm::vec4(0.0f);
-    glm::vec4 light_colour = glm::vec4(1.0f);
+    glm::vec4 light_intensity = glm::vec4(1.0f);
+    glm::vec4 ambient_intensity = glm::vec4(0.0f);
 };
 
 const uint32_t SCENE_UNIFORM_SET_ID = 0;  // all scene-wide uniforms (lights, camera, etc.)
@@ -163,8 +157,9 @@ const uint32_t MODEL_UNIFORM_SET_ID = 1;  // all uniforms that apply to one obje
 const std::string MODEL_DATA_BINDING_NAME = "model";  // holds model-specific numeric data (model transform, etc...)
 
 const uint32_t SURFACE_UNIFORM_SET_ID = 2;  // all samplers that apply to one surface (one object can have multiple surfaces)
-const std::string SURFACE_MATERIAL_BINDING_NAME = "material";
 const std::string DIFFUSE_SAMPLER_BINDING_NAME = "diffuse_sampler";  // holds the diffuse texture of the surface / mesh being drawn
+const std::string METAL_ROUGH_SAMPLER_BINDING_NAME = "metal_rough_sampler";  // holds the metalness (B) and rougness (G) values of the surface / mesh being drawn
+const std::string NORMAL_SAMPLER_BINDING_NAME = "normal_sampler";
 
 const uint32_t PARTICLES_UNIFORM_SET_ID = 1;
 const std::string PARTICLES_TEXTURE_ATLAS_BINDING_NAME = "texture_atlas";

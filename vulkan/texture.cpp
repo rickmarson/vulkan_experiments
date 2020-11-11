@@ -53,15 +53,6 @@ void Texture::cleanup() {
 }
 
 void Texture::loadImageRGBA(const std::string& src_image_path, bool generateMipMaps) {
-    if (!isFormatSupported(backend_->getPhysicalDevice(), 
-                           VK_FORMAT_R8G8B8A8_SRGB, 
-                           VK_IMAGE_TILING_OPTIMAL, 
-                           VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)) {
-        std::cerr << "Error loading texture " << src_image_path << std::endl;
-        std::cerr << "VK_FORMAT_R8G8B8A8_SRGB texture format is not supported on the selected device!" << std::endl;
-        return;
-    }
-
     int width, height, original_channels;
     stbi_uc* stb_pixels = stbi_load(src_image_path.c_str(), &width, &height, &original_channels, STBI_rgb_alpha);
 
@@ -83,7 +74,35 @@ void Texture::loadImageRGBA(const std::string& src_image_path, bool generateMipM
                   pixels);
 }
 
+void Texture::loadImageRGBA(uint32_t width, uint32_t height, bool genMipMaps, glm::vec4 fill_colour) {
+    auto pixels = std::vector<uint8_t>(width * height * 4, 0);
+    uint8_t fill_bytes[] = { static_cast<uint8_t>(fill_colour[0] * 255), 
+                            static_cast<uint8_t>(fill_colour[1] * 255),
+                            static_cast<uint8_t>(fill_colour[2] * 255),
+                            static_cast<uint8_t>(fill_colour[3] * 255)};
+    size_t offset = 0;
+    for (auto px = 0; px < width * height; ++px) {
+        std::memcpy(pixels.data() + offset, fill_bytes, 4);
+        offset += 4;
+    }
+
+    loadImageRGBA(width, 
+                  height, 
+                  4,
+                  genMipMaps,
+                  pixels);
+}
+
 void Texture::loadImageRGBA(uint32_t width, uint32_t height, uint32_t channels, bool genMipMaps, const std::vector<unsigned char>& pixels) {
+     if (!isFormatSupported(backend_->getPhysicalDevice(), 
+                           VK_FORMAT_R8G8B8A8_SRGB, 
+                           VK_IMAGE_TILING_OPTIMAL, 
+                           VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)) {
+        std::cerr << "Error creating texture " << name_ << std::endl;
+        std::cerr << "VK_FORMAT_R8G8B8A8_SRGB texture format is not supported on the selected device!" << std::endl;
+        return;
+    }
+    
     width_ = width;
     height_ = height;
     channels_ = channels;

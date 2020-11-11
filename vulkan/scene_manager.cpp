@@ -48,6 +48,7 @@ namespace {
             pos_stride = pos_accessor.ByteStride(pos_view) ? (pos_accessor.ByteStride(pos_view) / sizeof(float)) : 3;
 
             if (p.attributes.find("TEXCOORD_0") != p.attributes.end()) {
+                // slight simplification: assume all textures share the same uv space
                 const tinygltf::Accessor& uv_accessor = model.accessors[p.attributes.find("TEXCOORD_0")->second];
                 const tinygltf::BufferView& uv_view = model.bufferViews[uv_accessor.bufferView];
                 buffer_uv = reinterpret_cast<const float*>(&(model.buffers[uv_view.buffer].data[uv_accessor.byteOffset + uv_view.byteOffset]));
@@ -224,9 +225,6 @@ SceneManager::SceneManager(VulkanBackend* backend) :
 SceneManager::~SceneManager() {
     backend_->destroyBuffer(scene_index_buffer_);
     backend_->destroyBuffer(scene_vertex_buffer_);
-    for (auto& mat : materials_) {
-        backend_->destroyUniformBuffer(mat->material_uniform);
-    }
     materials_.clear();
     meshes_.clear();
     textures_.clear();
@@ -268,30 +266,41 @@ bool SceneManager::loadFromGlb(const std::string& file_path) {
         auto material = std::make_shared<Material>();
 
         // only support one texture per type for now
-        if (gltf_mat.values.find("baseColorTexture") != gltf_mat.values.end()) {
-            material->diffuse_texture = textures_[gltf_mat.values["baseColorTexture"].TextureIndex()];
-        }
-        if (gltf_mat.values.find("normalTexture") != gltf_mat.values.end()) {
-            material->normal_texture = textures_[gltf_mat.values["normalTexture"].TextureIndex()];
-        }
-        if (gltf_mat.values.find("emissiveTexture") != gltf_mat.values.end()) {
-            material->occlusion_texture = textures_[gltf_mat.values["emissiveTexture"].TextureIndex()];
-        }
-        if (gltf_mat.values.find("occlusionTexture") != gltf_mat.values.end()) {
-            material->emissive_texture = textures_[gltf_mat.values["occlusionTexture"].TextureIndex()];
-        }
-        if (gltf_mat.values.find("baseColorFactor") != gltf_mat.values.end()) {
-            material->material_data.diffuse_factor = glm::make_vec4(gltf_mat.values["baseColorFactor"].ColorFactor().data());
-        }
-        if (gltf_mat.values.find("emissiveFactor") != gltf_mat.values.end()) {
-            //material->material_data.emissive_factor = glm::make_vec4(gltf_mat.values["emissiveFactor"].ColorFactor().data());
-        }
+        auto& pbr_metal_rough = gltf_mat.pbrMetallicRoughness;
 
-        material->material_uniform = backend_->createUniformBuffer<MaterialData>("material_" + std::to_string(materials_.size()));
-        for (size_t i = 0; i < backend_->getSwapChainSize(); i++) {
-            backend_->updateBuffer<MaterialData>(material->material_uniform.buffers[i], { material->material_data });
+        if (pbr_metal_rough.baseColorTexture.index > -1) {
+            material->diffuse_texture = textures_[pbr_metal_rough.baseColorTexture.index];
         }
+        if (pbr_metal_rough.metallicRoughnessTexture.index > -1) {
+            material->metal_rough_texture = textures_[pbr_metal_rough.metallicRoughnessTexture.index];
+        } else {
+            // if no metallic roughness texture is provided, fallback to creating one filled with the 
+            // respective factors. 
+            // wastes a bit of space, but it's easier to handle on the pipeline / shader side than 
+            // dynamically switching between a uniform block and a sampler
+            auto metallic_factor = static_cast<float>(pbr_metal_rough.metallicFactor);
+            auto rough_factor = static_cast<float>(pbr_metal_rough.roughnessFactor);
 
+            auto fill = glm::vec4(0.0, rough_factor, metallic_factor, 0.0);
+            auto texture = backend_->createTexture(gltf_mat.name + "_metal_rough_generated");
+            texture->loadImageRGBA(1024, 1024, true, fill);
+            texture->createSampler();
+            material->metal_rough_texture = texture;
+            textures_.push_back(std::move(texture));
+        }
+        if (gltf_mat.normalTexture.index > -1) {
+            material->normal_texture = textures_[gltf_mat.normalTexture.index];
+        }
+        if (gltf_mat.emissiveTexture.index > -1) {
+            material->emissive_texture = textures_[gltf_mat.emissiveTexture.index];
+            // for emissive surfaces use the emissive colour as diffuse 
+            // since the base colour is likely absent and they don't "emit" 
+            material->diffuse_texture = material->emissive_texture;
+        }
+        if (gltf_mat.occlusionTexture.index > -1) {
+            material->occlusion_texture = textures_[gltf_mat.occlusionTexture.index];
+        }
+       
         materials_.push_back(std::move(material));
     }
     
@@ -363,8 +372,12 @@ void SceneManager::setLightPosition(const glm::vec3 pos) {
     scene_data_.light_position = glm::vec4(pos / gltf_scale_factor_, 1.0f);
 }
 
-void SceneManager::setLightColour(const glm::vec4 colour) {
-    scene_data_.light_colour = colour;
+void SceneManager::setLightColour(const glm::vec4 colour, float intensity) {
+    scene_data_.light_intensity = colour * intensity;
+}
+
+void SceneManager::setAmbientColour(const glm::vec4 colour, float intensity) {
+    scene_data_.ambient_intensity = colour * intensity;
 }
 
 DescriptorPoolConfig SceneManager::getDescriptorsCount() const {

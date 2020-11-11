@@ -35,8 +35,9 @@ public:
 	void setCameraTransform(const glm::mat4 transform);
 
 	void setLightPosition(const glm::vec3 pos);
-	void setLightColour(const glm::vec4 colour);
-
+	void setLightColour(const glm::vec4 colour, float intensity = 1.0f);
+	void setAmbientColour(const glm::vec4 colour, float intensity = 1.0f);
+	
 	const SceneData& getSceneData() const { return scene_data_; }
 
 	DescriptorPoolConfig getDescriptorsCount() const;
