@@ -20,6 +20,7 @@ struct ParticleEmitterConfig {
 	glm::vec3 max_box_extent;
 	glm::vec3 min_starting_velocity;
 	glm::vec3 max_starting_velocity;
+	float lifetime_after_collision = 0.0f; // s
 
 	std::string texture_atlas;
 

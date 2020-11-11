@@ -72,7 +72,7 @@ bool ParticleEmitter::createParticles(uint32_t count, const std::string& shader_
     for (uint32_t i = 0; i < count; ++i) {
         particles[i] = { 
             glm::vec4(uniform_dist_x(e), uniform_dist_y(e), uniform_dist_z(e), 0.0),   // w holds a collision flag
-            glm::vec4(uniform_dist_vel_x(e), uniform_dist_vel_y(e), uniform_dist_vel_z(e), 0.8)  // w holds the lifetime after collision, in s 
+            glm::vec4(uniform_dist_vel_x(e), uniform_dist_vel_y(e), uniform_dist_vel_z(e), config_.lifetime_after_collision)  // w holds the lifetime after collision, in s 
         };
     }
 

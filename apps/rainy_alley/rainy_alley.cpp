@@ -103,6 +103,7 @@ bool RainyAlley::loadAssets() {
 	emitter_config.max_box_extent = glm::vec3(2.0f, 8.0, 20.0f);
 	emitter_config.min_starting_velocity = glm::vec3(0.0f, 0.0f, -10.0f);
 	emitter_config.max_starting_velocity = glm::vec3(0.0f, 0.0f, 0.0f);
+	emitter_config.lifetime_after_collision = 0.25f;
 	emitter_config.texture_atlas = "textures/rain_drops.png";
 
 #ifndef NDEBUG
@@ -121,7 +122,7 @@ bool RainyAlley::loadAssets() {
 	scene_manager_->setCameraPosition(glm::vec3(-10.0f, 0.0f, 4.0f));
 	scene_manager_->setCameraTarget(glm::vec3(0.0f, 0.0f, 2.0f));
 
-	scene_manager_->setLightPosition(glm::vec3(0.4f, 0, 5.7f));
+	scene_manager_->setLightPosition(glm::vec3(0.4f, -0.1f, 5.7f));
 	scene_manager_->setLightColour(glm::vec4(1.0f, 0.971f, 0.492f, 1.0f));
 	scene_manager_->setAmbientColour(glm::vec4(0.0001f));
 
