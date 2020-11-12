@@ -36,9 +36,11 @@ namespace {
 
             const float* buffer_pos = nullptr;
             const float* buffer_normals = nullptr;
+            const float* buffer_tangents = nullptr;
             const float* buffer_uv = nullptr;
             int pos_stride;
             int norm_stride;
+            int tan_stride;
             int uv_stride;
 
             const gltf::Accessor& pos_accessor = model.accessors[p.attributes.find("POSITION")->second];
@@ -62,6 +64,13 @@ namespace {
                 norm_stride = norm_accessor.ByteStride(norm_view) ? (norm_accessor.ByteStride(norm_view) / sizeof(float)) : 3;
             }
 
+            if (p.attributes.find("TANGENT") != p.attributes.end()) {
+                const gltf::Accessor& tan_accessor = model.accessors[p.attributes.find("TANGENT")->second];
+                const gltf::BufferView& tan_view = model.bufferViews[tan_accessor.bufferView];
+                buffer_tangents = reinterpret_cast<const float*>(&(model.buffers[tan_view.buffer].data[tan_accessor.byteOffset + tan_view.byteOffset]));
+                tan_stride = tan_accessor.ByteStride(tan_view) ? (tan_accessor.ByteStride(tan_view) / sizeof(float)) : 3;
+            }
+
             for (size_t v = 0; v < pos_accessor.count; v++) {
                 auto gltf_pos = glm::make_vec3(&buffer_pos[v * pos_stride]);
                 auto gltf_norm = glm::make_vec3(&buffer_normals[v * norm_stride]);
@@ -74,6 +83,15 @@ namespace {
                 vert.normal[2] = gltf_norm[1];
                 vert.tex_coord = buffer_uv ? glm::make_vec2(&buffer_uv[v * uv_stride]) : glm::vec3(0.0f);
                 
+                if (buffer_tangents != nullptr) {
+                    auto gltf_tan = glm::make_vec3(&buffer_tangents[v * tan_stride]);
+                    vert.tangent[0] = -gltf_tan[2];
+                    vert.tangent[1] = gltf_tan[0];
+                    vert.tangent[2] = gltf_tan[1];
+                } else {
+                    vert.tangent = glm::vec3(0.0f);
+                }
+
                 vertex_buffer.push_back(vert);
             }
 

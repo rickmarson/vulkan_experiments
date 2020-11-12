@@ -6,11 +6,10 @@
 layout(location = 0) in vec2 frag_tex_coord;
 layout(location = 1) in float depth;
 layout(location = 2) in vec3 normal_world;
-layout(location = 3) in vec3 position_view;
-layout(location = 4) in vec3 normal_view;
-layout(location = 5) in vec3 light_view;
-layout(location = 6) in vec4 light_intensity;
-layout(location = 7) in vec4 ambient_intensity;
+layout(location = 3) in vec3 position_local;
+layout(location = 4) in vec3 light_local;
+layout(location = 5) in vec4 light_intensity;
+layout(location = 6) in vec4 ambient_intensity;
 
 layout(set = 2, binding = 0) uniform sampler2D diffuse_sampler;
 layout(set = 2, binding = 1) uniform sampler2D metal_rough_sampler;
@@ -31,17 +30,17 @@ void main() {
     vec4 diffuse_colour = texture(diffuse_sampler, frag_tex_coord);
     vec4 metal_rough = texture(metal_rough_sampler, frag_tex_coord);
     vec4 normal_map = texture(normal_sampler, frag_tex_coord);
+    vec3 normal = normal_map.xyz * 2.0 - 1.0;
 
     float metalness = metal_rough.z;
     float roughness = metal_rough.y;
-    vec3 substitute_normal = normalize(normal_map.xyz);
 
-    vec3 frag_color = brdf(position_view, 
-                           normal_view, 
+    vec3 frag_color = brdf(position_local, 
+                           normal, 
                            diffuse_colour.xyz, 
                            metalness, 
                            roughness, 
-                           light_view, 
+                           light_local, 
                            light_intensity.xyz);
 
     frag_color += ambient_intensity.xyz * diffuse_colour.xyz;
