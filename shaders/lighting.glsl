@@ -17,19 +17,18 @@ float ggxDistribution(in float n_dot_h, in float roughness) {
 	return alpha2 / (PI * d * d);
 }
 
-vec3 brdf(in vec3 pos, 
+vec3 brdf(in vec3 eye, 
 		  in vec3 norm, 
 		  in vec3 diffuse_colour, 
 		  in float metalness,
 		  in float roughness, 
-		  in vec3 light_pos, 
+		  in vec3 light_dir, 
 		  in vec3 light_intensity) {	
-	vec3 l = light_pos - pos;
-	float dist = length(l);
-	l = normalize(l);
+	float dist = length(light_dir);
+	vec3 l = normalize(light_dir);
 	light_intensity /= (dist * dist);
 	
-	vec3 v = normalize(-pos);
+	vec3 v = normalize(eye);
 	vec3 h = normalize(v + l);
 	float n_dot_h = dot(norm, h);
 	float l_dot_h = dot(l, h);

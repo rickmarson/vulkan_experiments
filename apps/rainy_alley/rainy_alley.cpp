@@ -123,8 +123,8 @@ bool RainyAlley::loadAssets() {
 	scene_manager_->setCameraTarget(glm::vec3(0.0f, 0.0f, 2.0f));
 
 	scene_manager_->setLightPosition(glm::vec3(0.4f, -0.1f, 5.7f));
-	scene_manager_->setLightColour(glm::vec4(1.0f, 0.971f, 0.492f, 1.0f));
-	scene_manager_->setAmbientColour(glm::vec4(0.0001f));
+	scene_manager_->setLightColour(glm::vec4(1.0f, 0.971f, 0.492f, 1.0f), 4.0f);
+	scene_manager_->setAmbientColour(glm::vec4(0.02f));
 
 	scene_manager_->loadFromGlb("meshes/alley.glb");
 
@@ -259,6 +259,7 @@ bool RainyAlley::createAlleyGraphicsPipeline() {
 	config.vertex = shaders_["alley_vs"];
 	config.fragment = shaders_["alley_fs"];
 	config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	config.cullBackFace = false;
 	config.vertex_buffer_binding_desc = shaders_["alley_vs"]->getInputBindingDescription();
 	config.vertex_buffer_attrib_desc = shaders_["alley_vs"]->getInputAttributes();
 	config.render_pass = render_pass_;

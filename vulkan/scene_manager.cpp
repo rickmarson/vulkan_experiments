@@ -68,7 +68,7 @@ namespace {
                 const gltf::Accessor& tan_accessor = model.accessors[p.attributes.find("TANGENT")->second];
                 const gltf::BufferView& tan_view = model.bufferViews[tan_accessor.bufferView];
                 buffer_tangents = reinterpret_cast<const float*>(&(model.buffers[tan_view.buffer].data[tan_accessor.byteOffset + tan_view.byteOffset]));
-                tan_stride = tan_accessor.ByteStride(tan_view) ? (tan_accessor.ByteStride(tan_view) / sizeof(float)) : 3;
+                tan_stride = tan_accessor.ByteStride(tan_view) ? (tan_accessor.ByteStride(tan_view) / sizeof(float)) : 4;
             }
 
             for (size_t v = 0; v < pos_accessor.count; v++) {
@@ -84,12 +84,13 @@ namespace {
                 vert.tex_coord = buffer_uv ? glm::make_vec2(&buffer_uv[v * uv_stride]) : glm::vec3(0.0f);
                 
                 if (buffer_tangents != nullptr) {
-                    auto gltf_tan = glm::make_vec3(&buffer_tangents[v * tan_stride]);
+                    auto gltf_tan = glm::make_vec4(&buffer_tangents[v * tan_stride]);
                     vert.tangent[0] = -gltf_tan[2];
                     vert.tangent[1] = gltf_tan[0];
                     vert.tangent[2] = gltf_tan[1];
+                    vert.tangent[3] = gltf_tan[3];
                 } else {
-                    vert.tangent = glm::vec3(0.0f);
+                    vert.tangent = glm::vec4(0.0f);
                 }
 
                 vertex_buffer.push_back(vert);

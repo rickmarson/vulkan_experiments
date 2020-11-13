@@ -19,9 +19,9 @@ public:
     static std::shared_ptr<Texture> createTexture(const std::string& name, VkDevice device, VulkanBackend* backend);
 
     const std::string& getName() const { return name_; }
-    void loadImageRGBA(const std::string& src_image_path, bool generateMipMaps = true);
-    void loadImageRGBA(uint32_t width, uint32_t height, bool genMipMaps, glm::vec4 fill_colour);
-    void loadImageRGBA(uint32_t width, uint32_t height, uint32_t channels, bool genMipMaps, const std::vector<unsigned char>& pixels);
+    void loadImageRGBA(const std::string& src_image_path, bool genMipMaps = true, bool srgb = false);
+    void loadImageRGBA(uint32_t width, uint32_t height, bool genMipMaps, glm::vec4 fill_colour, bool srgb = false);
+    void loadImageRGBA(uint32_t width, uint32_t height, uint32_t channels, bool genMipMaps, const std::vector<unsigned char>& pixels, bool srgb = false);
     void createColourAttachment(uint32_t width, uint32_t height, VkFormat format, VkSampleCountFlagBits num_samples);
     void createDepthStencilAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits num_samples);
     void createDepthStorageImage(uint32_t width, uint32_t height, bool as_rgba32 = false);
