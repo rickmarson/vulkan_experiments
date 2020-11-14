@@ -14,7 +14,8 @@ layout(set = 0, binding = 0) uniform SceneData {
     mat4 view;
     mat4 proj;
     vec3 light_position;
-    vec4 light_colour;
+    vec4 light_intensity;
+    vec4 ambient_intensity;
 } scene;
 
 void main() {

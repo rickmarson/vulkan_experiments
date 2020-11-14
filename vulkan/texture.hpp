@@ -29,11 +29,15 @@ public:
 
     void createSampler();
     bool hasValidSampler() const { return vk_sampler_ != VK_NULL_HANDLE; }
+    
+    // used for descriptor sets that have one binding point dedicates to one texture
     void updateDescriptorSets(std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding_point);
 
     VkFormat getFormat() const { return vk_format_; }
     VkImage getImage() const { return vk_image_; }
     VkImageView getImageView() const { return vk_image_view_; }
+    VkImageLayout getImageLayout() const { return vk_layout_; }
+    VkSampler getImageSampler() const { return vk_sampler_; }
 
 private:
     bool createImage();

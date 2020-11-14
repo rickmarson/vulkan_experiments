@@ -244,6 +244,9 @@ SceneManager::SceneManager(VulkanBackend* backend) :
 SceneManager::~SceneManager() {
     backend_->destroyBuffer(scene_index_buffer_);
     backend_->destroyBuffer(scene_vertex_buffer_);
+    for (auto& mat : materials_) {
+        backend_->destroyUniformBuffer(mat->material_uniform);
+    }
     materials_.clear();
     meshes_.clear();
     textures_.clear();
@@ -283,41 +286,32 @@ bool SceneManager::loadFromGlb(const std::string& file_path) {
     // load all materials (with limited material support)
     for (auto& gltf_mat : gltf_model.materials) {
         auto material = std::make_shared<Material>();
+        material->material_data.emissive_factor[0] = static_cast<float>(gltf_mat.emissiveFactor[0]);
+        material->material_data.emissive_factor[1] = static_cast<float>(gltf_mat.emissiveFactor[1]);
+        material->material_data.emissive_factor[2] = static_cast<float>(gltf_mat.emissiveFactor[2]);
 
         // only support one texture per type for now
         auto& pbr_metal_rough = gltf_mat.pbrMetallicRoughness;
 
         if (pbr_metal_rough.baseColorTexture.index > -1) {
-            material->diffuse_texture = textures_[pbr_metal_rough.baseColorTexture.index];
+            material->material_data.diffuse_idx = pbr_metal_rough.baseColorTexture.index;
         }
         if (pbr_metal_rough.metallicRoughnessTexture.index > -1) {
-            material->metal_rough_texture = textures_[pbr_metal_rough.metallicRoughnessTexture.index];
+            material->material_data.metal_rough_idx = pbr_metal_rough.metallicRoughnessTexture.index;
         } else {
-            // if no metallic roughness texture is provided, fallback to creating one filled with the 
-            // respective factors. 
-            // wastes a bit of space, but it's easier to handle on the pipeline / shader side than 
-            // dynamically switching between a uniform block and a sampler
-            auto metallic_factor = static_cast<float>(pbr_metal_rough.metallicFactor);
-            auto rough_factor = static_cast<float>(pbr_metal_rough.roughnessFactor);
-
-            auto fill = glm::vec4(0.0, rough_factor, metallic_factor, 0.0);
-            auto texture = backend_->createTexture(gltf_mat.name + "_metal_rough_generated");
-            texture->loadImageRGBA(1024, 1024, true, fill);
-            texture->createSampler();
-            material->metal_rough_texture = texture;
-            textures_.push_back(std::move(texture));
+            material->material_data.metallic_factor = static_cast<float>(pbr_metal_rough.metallicFactor);
+            material->material_data.roughness_factor = static_cast<float>(pbr_metal_rough.roughnessFactor);
         }
         if (gltf_mat.normalTexture.index > -1) {
-            material->normal_texture = textures_[gltf_mat.normalTexture.index];
+            material->material_data.normal_idx = gltf_mat.normalTexture.index;
         }
         if (gltf_mat.emissiveTexture.index > -1) {
-            material->emissive_texture = textures_[gltf_mat.emissiveTexture.index];
-            // for emissive surfaces use the emissive colour as diffuse 
-            // since the base colour is likely absent and they don't "emit" 
-            material->diffuse_texture = material->emissive_texture;
+            material->material_data.emissive_idx = gltf_mat.emissiveTexture.index;
         }
-        if (gltf_mat.occlusionTexture.index > -1) {
-            material->occlusion_texture = textures_[gltf_mat.occlusionTexture.index];
+
+        material->material_uniform = backend_->createUniformBuffer<MaterialData>("material_" + std::to_string(materials_.size()));
+        for (size_t i = 0; i < backend_->getSwapChainSize(); i++) {
+            backend_->updateBuffer<MaterialData>(material->material_uniform.buffers[i], { material->material_data });
         }
        
         materials_.push_back(std::move(material));
@@ -503,6 +497,33 @@ void SceneManager::createDescriptorSets(const std::map<uint32_t, VkDescriptorSet
 void SceneManager::updateDescriptorSets(const DescriptorSetMetadata& metadata) {
     const auto& bindings = metadata.set_bindings.find(SCENE_UNIFORM_SET_ID)->second;
     backend_->updateDescriptorSets(uniform_buffer_, vk_descriptor_sets_, bindings.find(SCENE_DATA_BINDING_NAME)->second);
+
+    if (bindings.find(SCENE_TEXTURES_ARRAY) != bindings.end()) {
+        auto textures_binding_point = bindings.find(SCENE_TEXTURES_ARRAY)->second;
+
+        std::vector<VkDescriptorImageInfo> image_infos;
+        for (auto& texture : textures_) {
+            VkDescriptorImageInfo image_info{};
+            image_info.imageLayout = texture->getImageLayout();
+            image_info.imageView = texture->getImageView();
+            image_info.sampler = texture->getImageSampler();
+
+            image_infos.push_back(image_info);
+        }
+
+        for (size_t i = 0; i < vk_descriptor_sets_.size(); i++) {
+            VkWriteDescriptorSet descriptor_write{};
+            descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptor_write.dstSet = vk_descriptor_sets_[i];
+            descriptor_write.dstBinding = textures_binding_point;
+            descriptor_write.dstArrayElement = 0;
+            descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            descriptor_write.descriptorCount = static_cast<uint32_t>(image_infos.size());
+            descriptor_write.pImageInfo = image_infos.data();
+
+            vkUpdateDescriptorSets(backend_->getDevice(), 1, &descriptor_write, 0, nullptr);
+        }
+    }
 
     if (bindings.find(SCENE_DEPTH_BUFFER_STORAGE) != bindings.end()){
         scene_depth_buffer_->updateDescriptorSets(vk_descriptor_sets_, bindings.find(SCENE_DEPTH_BUFFER_STORAGE)->second);

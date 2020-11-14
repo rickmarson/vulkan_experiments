@@ -9,7 +9,7 @@
             "program": "${command:cmake.launchTargetPath}",
             "args": [],
             "stopAtEntry": false,
-            "externalConsole": true,
+            "externalConsole": false,
             "cwd": "${command:cmake.launchTargetDirectory}/..",
         },
         {
@@ -21,7 +21,7 @@
             "program": "${command:cmake.launchTargetPath}",
             "args": [],
             "stopAtEntry": false,
-            "externalConsole": true,
+            "externalConsole": false,
             "cwd": "${command:cmake.launchTargetDirectory}",
         }
     ]

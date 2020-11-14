@@ -48,12 +48,20 @@ struct UniformBuffer {
     std::vector<Buffer> buffers;  // one per command buffer / swap chain image
 };
 
+struct MaterialData { 
+    alignas(16) glm::vec3 emissive_factor = glm::vec3(-1.0f);
+    alignas(4)  float metallic_factor = -1.0f;
+    alignas(16) float roughness_factor = -1.0f;
+
+    alignas(4) int diffuse_idx = -1;
+    alignas(4) int metal_rough_idx = -1;
+    alignas(4) int normal_idx = -1;
+    alignas(4) int emissive_idx = -1;
+};
+
 struct Material {
-    std::weak_ptr<Texture> diffuse_texture;
-    std::weak_ptr<Texture> metal_rough_texture;
-    std::weak_ptr<Texture> normal_texture;
-    std::weak_ptr<Texture> occlusion_texture;
-    std::weak_ptr<Texture> emissive_texture;
+    MaterialData material_data;
+    UniformBuffer material_uniform;
 };
 
 struct DescriptorPoolConfig {
@@ -148,6 +156,7 @@ struct SceneData {
 
 const uint32_t SCENE_UNIFORM_SET_ID = 0;  // all scene-wide uniforms (lights, camera, etc.)
 const std::string SCENE_DATA_BINDING_NAME = "scene";  // holds scene-wide information (view, projection, lights, etc..)
+const std::string SCENE_TEXTURES_ARRAY = "scene_textures"; // global binding point holding all textures in the scene
 const std::string SCENE_DEPTH_BUFFER_STORAGE = "scene_depth_buffer";  // texel storage buffers used to store / load depth info across pipelines
 
 struct ModelData {
@@ -158,9 +167,7 @@ const uint32_t MODEL_UNIFORM_SET_ID = 1;  // all uniforms that apply to one obje
 const std::string MODEL_DATA_BINDING_NAME = "model";  // holds model-specific numeric data (model transform, etc...)
 
 const uint32_t SURFACE_UNIFORM_SET_ID = 2;  // all samplers that apply to one surface (one object can have multiple surfaces)
-const std::string DIFFUSE_SAMPLER_BINDING_NAME = "diffuse_sampler";  // holds the diffuse texture of the surface / mesh being drawn
-const std::string METAL_ROUGH_SAMPLER_BINDING_NAME = "metal_rough_sampler";  // holds the metalness (B) and rougness (G) values of the surface / mesh being drawn
-const std::string NORMAL_SAMPLER_BINDING_NAME = "normal_sampler";
+const std::string SURFACE_MATERIAL_BINDING_NAME = "material";
 
 const uint32_t PARTICLES_UNIFORM_SET_ID = 1;
 const std::string PARTICLES_TEXTURE_ATLAS_BINDING_NAME = "texture_atlas";

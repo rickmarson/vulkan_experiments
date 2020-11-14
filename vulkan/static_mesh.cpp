@@ -48,8 +48,8 @@ void StaticMesh::deleteUniformBuffer() {
 
 DescriptorPoolConfig StaticMesh::getDescriptorsCount() const {
     DescriptorPoolConfig config;
-    config.image_samplers_count = surfaces_.size() * 3;
-    config.uniform_buffers_count = 1;
+    config.image_samplers_count = surfaces_.size() * 4;
+    config.uniform_buffers_count = surfaces_.size() * 1 + 1;
 
     return config;
 }
@@ -115,16 +115,5 @@ void StaticMesh::Surface::createDescriptorSets(VulkanBackend* backend, const std
 void StaticMesh::Surface::updateDescriptorSets(VulkanBackend* backend, const DescriptorSetMetadata& metadata) {
     const auto& bindings = metadata.set_bindings.find(SURFACE_UNIFORM_SET_ID)->second;
     auto material = material_weak.lock();
-    auto diffuse_texture = material->diffuse_texture.lock();
-    diffuse_texture->updateDescriptorSets(vk_descriptor_sets, bindings.find(DIFFUSE_SAMPLER_BINDING_NAME)->second);
-
-    if (bindings.find(METAL_ROUGH_SAMPLER_BINDING_NAME) != bindings.end()) {
-        auto metal_rough_texture = material->metal_rough_texture.lock();
-        metal_rough_texture->updateDescriptorSets(vk_descriptor_sets, bindings.find(METAL_ROUGH_SAMPLER_BINDING_NAME)->second);
-    }
-    
-    if (bindings.find(NORMAL_SAMPLER_BINDING_NAME) != bindings.end()) {
-        auto normal_texture = material->normal_texture.lock();
-        normal_texture->updateDescriptorSets(vk_descriptor_sets, bindings.find(NORMAL_SAMPLER_BINDING_NAME)->second);
-    }
+    backend->updateDescriptorSets(material->material_uniform, vk_descriptor_sets, bindings.find(SURFACE_MATERIAL_BINDING_NAME)->second);
 }
