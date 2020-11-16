@@ -8,10 +8,6 @@ layout(location = 1) in vec2 in_uv;
 
 layout(location = 0) out vec4 out_color;
 
-// at the moment the scene-level uniforms must be the same for all pipelines in a program.
-layout(set = 0, binding = 1) uniform sampler2D scene_textures[18];
-layout(set = 0, binding = 2, rgba32f) uniform image2D scene_depth_buffer;
-
 layout(set = 1, binding = 1) uniform sampler2D texture_atlas;
 
 void main() {

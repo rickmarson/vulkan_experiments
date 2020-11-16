@@ -393,17 +393,19 @@ void SceneManager::setAmbientColour(const glm::vec4 colour, float intensity) {
     scene_data_.ambient_intensity = colour * intensity;
 }
 
-DescriptorPoolConfig SceneManager::getDescriptorsCount() const {
+DescriptorPoolConfig SceneManager::getDescriptorsCount(uint32_t expected_pipelines_count) const {
     DescriptorPoolConfig config;
     for (auto& mesh : meshes_) {
         auto mesh_config = mesh->getDescriptorsCount();
-        config.image_samplers_count += mesh_config.image_samplers_count;
-        config.uniform_buffers_count += mesh_config.uniform_buffers_count;
-        config.storage_texel_buffers_count += mesh_config.storage_texel_buffers_count;
+        config = config + mesh_config;
     }
 
     config.uniform_buffers_count += 1;
     config.image_storage_buffers_count += 1;
+    config.image_samplers_count += textures_.size();
+
+    config = config * expected_pipelines_count;
+        
     return config;
 }
 
@@ -472,7 +474,7 @@ void SceneManager::deleteUniforms() {
     scene_depth_buffer_.reset();
 }
 
-void SceneManager::createDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {
+void SceneManager::createDescriptorSets(const std::string& pipeline_name, const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {
     const auto& layout = descriptor_set_layouts.find(SCENE_UNIFORM_SET_ID)->second;
     std::vector<VkDescriptorSetLayout> layouts(backend_->getSwapChainSize(), layout);
     VkDescriptorSetAllocateInfo alloc_info{};
@@ -487,16 +489,21 @@ void SceneManager::createDescriptorSets(const std::map<uint32_t, VkDescriptorSet
         return;
     }
 
-    vk_descriptor_sets_ = std::move(layout_descriptor_sets);
-
-    for (auto& mesh : meshes_) {
-        mesh->createDescriptorSets(descriptor_set_layouts);
-    }
+    // store one set of scene-wide descriptors for each pipeline that needs scene data 
+    // to avoid declaring lots of unused uniforms just so that the bindings are compatible
+    vk_descriptor_sets_[pipeline_name] = std::move(layout_descriptor_sets);
 }
 
-void SceneManager::updateDescriptorSets(const DescriptorSetMetadata& metadata) {
+void SceneManager::updateDescriptorSets(const std::string& pipeline_name, const DescriptorSetMetadata& metadata) {
+    if (vk_descriptor_sets_.find(pipeline_name) == vk_descriptor_sets_.end()) {
+        std::cerr << "updateDescriptorSets(): Descriptor sets for pipeline " << pipeline_name << " do not exists!" << std::endl;
+        // just carry on and crash as there's something badly wrong if this is triggered 
+    }
+
+    auto& descriptor_sets = vk_descriptor_sets_[pipeline_name];
+
     const auto& bindings = metadata.set_bindings.find(SCENE_UNIFORM_SET_ID)->second;
-    backend_->updateDescriptorSets(uniform_buffer_, vk_descriptor_sets_, bindings.find(SCENE_DATA_BINDING_NAME)->second);
+    backend_->updateDescriptorSets(uniform_buffer_, descriptor_sets, bindings.find(SCENE_DATA_BINDING_NAME)->second);
 
     if (bindings.find(SCENE_TEXTURES_ARRAY) != bindings.end()) {
         auto textures_binding_point = bindings.find(SCENE_TEXTURES_ARRAY)->second;
@@ -511,10 +518,10 @@ void SceneManager::updateDescriptorSets(const DescriptorSetMetadata& metadata) {
             image_infos.push_back(image_info);
         }
 
-        for (size_t i = 0; i < vk_descriptor_sets_.size(); i++) {
+        for (size_t i = 0; i < descriptor_sets.size(); i++) {
             VkWriteDescriptorSet descriptor_write{};
             descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptor_write.dstSet = vk_descriptor_sets_[i];
+            descriptor_write.dstSet = descriptor_sets[i];
             descriptor_write.dstBinding = textures_binding_point;
             descriptor_write.dstArrayElement = 0;
             descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -526,9 +533,28 @@ void SceneManager::updateDescriptorSets(const DescriptorSetMetadata& metadata) {
     }
 
     if (bindings.find(SCENE_DEPTH_BUFFER_STORAGE) != bindings.end()){
-        scene_depth_buffer_->updateDescriptorSets(vk_descriptor_sets_, bindings.find(SCENE_DEPTH_BUFFER_STORAGE)->second);
+        scene_depth_buffer_->updateDescriptorSets(descriptor_sets, bindings.find(SCENE_DEPTH_BUFFER_STORAGE)->second);
     }
+}
 
+std::vector<VkDescriptorSet>& SceneManager::getDescriptorSets(const std::string& pipeline_name) { 
+    if (vk_descriptor_sets_.find(pipeline_name) == vk_descriptor_sets_.end()) {
+        std::cerr << "getDescriptorSets(): Descriptor sets for pipeline " << pipeline_name << " do not exists!" << std::endl;
+        // just carry on and crash as there's something badly wrong if this is triggered 
+    }
+    
+    return vk_descriptor_sets_[pipeline_name]; 
+}
+
+void SceneManager::createGeometryDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {
+    // all pipeliens that want to draw the scene geometry need to bind the same sets, so we only need to
+    // generate them only once and they will be compatible with all pipelines
+    for (auto& mesh : meshes_) {
+        mesh->createDescriptorSets(descriptor_set_layouts);
+    }
+}
+
+void SceneManager::updateGemetryDescriptorSets(const DescriptorSetMetadata& metadata) {
     for (auto& mesh : meshes_) {
         mesh->updateDescriptorSets(metadata);
     }

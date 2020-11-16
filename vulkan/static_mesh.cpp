@@ -48,7 +48,6 @@ void StaticMesh::deleteUniformBuffer() {
 
 DescriptorPoolConfig StaticMesh::getDescriptorsCount() const {
     DescriptorPoolConfig config;
-    config.image_samplers_count = surfaces_.size() * 4;
     config.uniform_buffers_count = surfaces_.size() * 1 + 1;
 
     return config;

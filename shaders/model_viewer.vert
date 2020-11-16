@@ -18,7 +18,7 @@ layout(set = 0, binding = 0) uniform SceneData {
     vec4 ambient_intensity; // unused
 } scene;
 
-layout(set = 1, binding = 1) uniform ModelData {
+layout(set = 1, binding = 0) uniform ModelData {
     mat4 transform;
 } model;
 

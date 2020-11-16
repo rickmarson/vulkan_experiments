@@ -40,7 +40,7 @@ public:
 	
 	const SceneData& getSceneData() const { return scene_data_; }
 
-	DescriptorPoolConfig getDescriptorsCount() const;
+	DescriptorPoolConfig getDescriptorsCount(uint32_t expected_pipelines_count) const;
 	std::shared_ptr<StaticMesh> getMeshByIndex(uint32_t idx);
 	std::shared_ptr<StaticMesh> getMeshByName(const std::string& name);
 	std::shared_ptr<Texture> getTexture(uint32_t idx);
@@ -50,9 +50,11 @@ public:
 
 	void createUniforms();
 	void deleteUniforms();
-	void createDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
-	void updateDescriptorSets(const DescriptorSetMetadata& metadata);
-	std::vector<VkDescriptorSet>& getDescriptorSets() { return vk_descriptor_sets_; }
+	void createDescriptorSets(const std::string& pipeline_name, const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
+	void updateDescriptorSets(const std::string& pipeline_name, const DescriptorSetMetadata& metadata);
+	void createGeometryDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
+	void updateGemetryDescriptorSets(const DescriptorSetMetadata& metadata);
+	std::vector<VkDescriptorSet>& getDescriptorSets(const std::string& pipeline_name);
 	std::shared_ptr<Texture>& getSceneDepthBuffer() { return scene_depth_buffer_; }
 
 	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index);
@@ -65,7 +67,7 @@ private:
 	SceneData scene_data_;
 	UniformBuffer uniform_buffer_;
 	std::shared_ptr<Texture> scene_depth_buffer_;
-	std::vector<VkDescriptorSet> vk_descriptor_sets_;
+	std::map<std::string, std::vector<VkDescriptorSet>> vk_descriptor_sets_;
 
 	Buffer scene_vertex_buffer_;
 	Buffer scene_index_buffer_;

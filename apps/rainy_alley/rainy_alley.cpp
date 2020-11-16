@@ -137,15 +137,12 @@ bool RainyAlley::loadAssets() {
 bool RainyAlley::setupScene() {
 	DescriptorPoolConfig pool_config;
 
-	auto scene_pool = scene_manager_->getDescriptorsCount();
+	auto scene_pool = scene_manager_->getDescriptorsCount(2);
 	auto emitter_pool = rain_drops_emitter_->getDescriptorsCount();
 	auto ui_pool = imgui_renderer_->getDescriptorsCount();
 	
-	pool_config.uniform_buffers_count = scene_pool.uniform_buffers_count + emitter_pool.uniform_buffers_count + ui_pool.uniform_buffers_count;
-	pool_config.image_samplers_count = scene_pool.image_samplers_count + emitter_pool.image_samplers_count + ui_pool.image_samplers_count;
-	pool_config.storage_texel_buffers_count = emitter_pool.storage_texel_buffers_count;
-	pool_config.image_storage_buffers_count = scene_pool.image_storage_buffers_count + emitter_pool.image_storage_buffers_count;
-	
+	pool_config = scene_pool + emitter_pool + ui_pool;
+
 	pool_config.uniform_buffers_count *= vulkan_backend_.getSwapChainSize();
 	pool_config.image_samplers_count *= vulkan_backend_.getSwapChainSize();
 	pool_config.image_storage_buffers_count *= vulkan_backend_.getSwapChainSize();
@@ -268,8 +265,10 @@ bool RainyAlley::createAlleyGraphicsPipeline() {
 	alley_graphics_pipeline_ = vulkan_backend_.createGraphicsPipeline(config);
 
 	scene_manager_->createUniforms();
-	scene_manager_->createDescriptorSets(alley_graphics_pipeline_.vk_descriptor_set_layouts);
-	scene_manager_->updateDescriptorSets(alley_graphics_pipeline_.descriptor_metadata);
+	scene_manager_->createGeometryDescriptorSets(alley_graphics_pipeline_.vk_descriptor_set_layouts);
+	scene_manager_->updateGemetryDescriptorSets(alley_graphics_pipeline_.descriptor_metadata);
+	scene_manager_->createDescriptorSets(alley_graphics_pipeline_.name, alley_graphics_pipeline_.vk_descriptor_set_layouts);
+	scene_manager_->updateDescriptorSets(alley_graphics_pipeline_.name, alley_graphics_pipeline_.descriptor_metadata);
 
 	return alley_graphics_pipeline_.vk_pipeline != VK_NULL_HANDLE;
 }
@@ -289,6 +288,9 @@ bool RainyAlley::createRainDropsPipeline() {
 	config.enableTransparency = true;
 
 	rain_graphics_pipeline_ = vulkan_backend_.createGraphicsPipeline(config);
+
+	scene_manager_->createDescriptorSets(rain_graphics_pipeline_.name, rain_graphics_pipeline_.vk_descriptor_set_layouts);
+	scene_manager_->updateDescriptorSets(rain_graphics_pipeline_.name, rain_graphics_pipeline_.descriptor_metadata);
 
 	rain_drops_emitter_->createUniformBuffers();
 	rain_drops_emitter_->createGraphicsDescriptorSets(rain_graphics_pipeline_.vk_descriptor_set_layouts);
@@ -333,8 +335,8 @@ RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
 	vkCmdBeginRenderPass(command_buffers[0], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
 	VkDeviceSize offsets[] = { 0 };
-	auto& scene_descriptors = scene_manager_->getDescriptorSets();
-	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, alley_graphics_pipeline_.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &scene_descriptors[swapchain_image], 0, nullptr);
+	auto& alley_scene_descriptors = scene_manager_->getDescriptorSets(alley_graphics_pipeline_.name);
+	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, alley_graphics_pipeline_.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &alley_scene_descriptors[swapchain_image], 0, nullptr);
 
 	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, alley_graphics_pipeline_.vk_pipeline);
 
@@ -345,6 +347,9 @@ RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
 	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 3); // does nothing if not in debug
 
 	vkCmdNextSubpass(command_buffers[0], VK_SUBPASS_CONTENTS_INLINE);
+
+	auto& rain_scene_descriptors = scene_manager_->getDescriptorSets(rain_graphics_pipeline_.name);
+	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, rain_graphics_pipeline_.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &rain_scene_descriptors[swapchain_image], 0, nullptr);
 
 	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, rain_graphics_pipeline_.vk_pipeline);
 

@@ -70,6 +70,22 @@ struct DescriptorPoolConfig {
     uint32_t storage_texel_buffers_count = 0;
     uint32_t image_storage_buffers_count = 0;
     uint32_t max_sets = 0;
+
+    DescriptorPoolConfig& operator +(const DescriptorPoolConfig& other) {
+        uniform_buffers_count += other.uniform_buffers_count;
+        image_samplers_count += other.image_samplers_count;
+        storage_texel_buffers_count += other.storage_texel_buffers_count;
+        image_storage_buffers_count += other.image_storage_buffers_count;
+        return *this;
+    }
+
+    DescriptorPoolConfig& operator *(uint32_t multiplier) {
+        uniform_buffers_count *= multiplier;
+        image_samplers_count *= multiplier;
+        storage_texel_buffers_count *= multiplier;
+        image_storage_buffers_count *= multiplier;
+        return *this;
+    }
 };
 
 struct SwapChainSupportDetails {
