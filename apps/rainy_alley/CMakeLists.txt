@@ -11,7 +11,8 @@ add_dependencies(rainy_alley glfw imgui vulkan shaders)
 
 target_link_libraries(rainy_alley ${Vulkan_LIBRARIES} vulkan glfw imgui)
 
-file(GLOB SHADERS "${CMAKE_SOURCE_DIR}/shaders/alley_vs.spv"
+file(GLOB SHADERS "${CMAKE_SOURCE_DIR}/shaders/shadow_map_vs.spv"
+                  "${CMAKE_SOURCE_DIR}/shaders/alley_vs.spv"
                   "${CMAKE_SOURCE_DIR}/shaders/alley_fs.spv"
                   "${CMAKE_SOURCE_DIR}/shaders/rain_drops_vs.spv"
                   "${CMAKE_SOURCE_DIR}/shaders/rain_drops_gm.spv"

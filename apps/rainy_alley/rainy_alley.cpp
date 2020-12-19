@@ -125,6 +125,7 @@ bool RainyAlley::loadAssets() {
 	scene_manager_->setLightPosition(glm::vec3(0.4f, -0.1f, 5.7f));
 	scene_manager_->setLightColour(glm::vec4(1.0f, 0.971f, 0.492f, 1.0f), 4.0f);
 	scene_manager_->setAmbientColour(glm::vec4(0.02f));
+	scene_manager_->enableShadows();
 
 	scene_manager_->loadFromGlb("meshes/alley.glb");
 
@@ -157,20 +158,30 @@ bool RainyAlley::setupScene() {
 	SubpassConfig alley_subpass;
 	alley_subpass.use_colour_attachment = true;
 	alley_subpass.use_depth_stencil_attachemnt = true;
-	alley_subpass.src_dependency = SubpassConfig::Dependency::NONE;
-	alley_subpass.dst_dependency = SubpassConfig::Dependency::COLOUR_ATTACHMENT;
+	SubpassConfig::Dependency subpass_dependency;
+	subpass_dependency.src_subpass = -1;
+	subpass_dependency.dst_subpass = 0;
+	subpass_dependency.src_dependency = SubpassConfig::DependencyType::NONE;
+	subpass_dependency.dst_dependency = SubpassConfig::DependencyType::COLOUR_ATTACHMENT;
+	alley_subpass.dependencies.push_back(subpass_dependency);
 
 	SubpassConfig rain_subpass;
 	rain_subpass.use_colour_attachment = true;
 	rain_subpass.use_depth_stencil_attachemnt = true;
-	rain_subpass.src_dependency = SubpassConfig::Dependency::COLOUR_ATTACHMENT;
-	rain_subpass.dst_dependency = SubpassConfig::Dependency::COLOUR_ATTACHMENT;
+	subpass_dependency.src_subpass = 0;
+	subpass_dependency.dst_subpass = 1;
+	subpass_dependency.src_dependency = SubpassConfig::DependencyType::COLOUR_ATTACHMENT;
+	subpass_dependency.dst_dependency = SubpassConfig::DependencyType::COLOUR_ATTACHMENT;
+	rain_subpass.dependencies.push_back(subpass_dependency);
 
 	SubpassConfig ui_subpass;
 	ui_subpass.use_colour_attachment = true;
 	ui_subpass.use_depth_stencil_attachemnt = false;
-	ui_subpass.src_dependency = SubpassConfig::Dependency::COLOUR_ATTACHMENT;
-	ui_subpass.dst_dependency = SubpassConfig::Dependency::NONE;
+	subpass_dependency.src_subpass = 1;
+	subpass_dependency.dst_subpass = 2;
+	subpass_dependency.src_dependency = SubpassConfig::DependencyType::COLOUR_ATTACHMENT;
+	subpass_dependency.dst_dependency = SubpassConfig::DependencyType::NONE;
+	ui_subpass.dependencies.push_back(subpass_dependency);
  
 	render_pass_config.subpasses = { alley_subpass, rain_subpass, ui_subpass };
 
@@ -189,6 +200,9 @@ bool RainyAlley::setupScene() {
 	if (!imgui_renderer_->createGraphicsPipeline(render_pass_, 2)) {
 		return false;
 	}
+
+	// only need to do this once as both the scene geometry and the light position are static
+	//scene_manager_->updateShadowMap();
 
 	drawUi();
 
@@ -321,7 +335,7 @@ RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
 	VkRenderPassBeginInfo render_pass_info{};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	render_pass_info.renderPass = render_pass_.vk_render_pass;
-	render_pass_info.framebuffer = render_pass_.swap_chain_framebuffers[swapchain_image];
+	render_pass_info.framebuffer = render_pass_.framebuffers[swapchain_image];
 	render_pass_info.renderArea.offset = { 0, 0 };
 	render_pass_info.renderArea.extent = vulkan_backend_.getSwapChainExtent();
 

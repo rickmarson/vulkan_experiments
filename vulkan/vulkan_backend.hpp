@@ -14,18 +14,27 @@ class Texture;
 class StaticMesh;
 
 struct SubpassConfig {
-    enum class Dependency { NONE =0, COLOUR_ATTACHMENT };
-
+    enum class DependencyType { NONE = 0, COLOUR_ATTACHMENT, FRAGMENT_SHADER, EARLY_FRAGMENT_TESTS, LATE_FRAGMENT_TESTS };
+    struct Dependency {
+        int32_t src_subpass = 0;  // -1 -> external
+        int32_t dst_subpass = 0;
+        DependencyType src_dependency = DependencyType::NONE;
+        DependencyType dst_dependency = DependencyType::NONE;
+    };
     bool use_colour_attachment = false;
     bool use_depth_stencil_attachemnt = false;
-    Dependency src_dependency = Dependency::NONE;
-    Dependency dst_dependency = Dependency::NONE;
+    std::list<Dependency> dependencies;
 };
 
 struct RenderPassConfig {
     std::string name;
     VkSampleCountFlagBits msaa_samples = VK_SAMPLE_COUNT_1_BIT;
+    bool offscreen = false;
+    bool has_colour = true;
+    bool has_depth = true;
     bool store_depth = false;
+    std::shared_ptr<Texture> external_colour_attchment; // optional
+    std::shared_ptr<Texture> external_depth_stencil_attchment; // optional
     std::vector<SubpassConfig> subpasses;
 };
 

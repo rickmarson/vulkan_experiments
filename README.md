@@ -14,10 +14,23 @@ Major differences include:
 
 ### Model Viewer
 
-Loads and displays a Wavefront OBJ model. Only supports 1 material per model.
+Loads and displays a glTF 2.0 model.
 This is essentially a fresh re-implementation of the Vulkan Tutorial to test the framework.
 
 # ![viewer](/pics/model_viewer.png)
+
+### Rainy Alley
+
+Static multi-object scene with GPU particle effects. 
+The main objective is to demonstrate screen-space collision techniques for GPU particles (i.e. rain). 
+
+Highlights:
+- Compute pipeline for rain simulation and collision detection
+- Simple BRDF lighting model
+- Normal mapping
+- Shadow map
+
+# ![viewer](/pics/rainy_alley.png)
 
 ## Dependencies
 

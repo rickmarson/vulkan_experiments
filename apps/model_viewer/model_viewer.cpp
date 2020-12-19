@@ -119,14 +119,21 @@ bool ModelViewer::setupScene() {
 	SubpassConfig model_subpass;
 	model_subpass.use_colour_attachment = true;
 	model_subpass.use_depth_stencil_attachemnt = true;
-	model_subpass.src_dependency = SubpassConfig::Dependency::NONE;
-	model_subpass.dst_dependency = SubpassConfig::Dependency::COLOUR_ATTACHMENT;
+	SubpassConfig::Dependency subpass_dependency;
+	subpass_dependency.src_subpass = -1;
+	subpass_dependency.dst_subpass = 0;
+	subpass_dependency.src_dependency = SubpassConfig::DependencyType::NONE;
+	subpass_dependency.dst_dependency = SubpassConfig::DependencyType::COLOUR_ATTACHMENT;
+	model_subpass.dependencies.push_back(subpass_dependency);
 
 	SubpassConfig ui_subpass;
 	ui_subpass.use_colour_attachment = true;
 	ui_subpass.use_depth_stencil_attachemnt = false;
-	ui_subpass.src_dependency = SubpassConfig::Dependency::COLOUR_ATTACHMENT;
-	ui_subpass.dst_dependency = SubpassConfig::Dependency::NONE;
+	subpass_dependency.src_subpass = 0;
+	subpass_dependency.dst_subpass = 1;
+	subpass_dependency.src_dependency = SubpassConfig::DependencyType::COLOUR_ATTACHMENT;
+	subpass_dependency.dst_dependency = SubpassConfig::DependencyType::NONE;
+	ui_subpass.dependencies.push_back(subpass_dependency);
 
 	render_pass_config.subpasses = { model_subpass, ui_subpass };
 
@@ -242,7 +249,7 @@ RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
 	VkRenderPassBeginInfo render_pass_info{};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	render_pass_info.renderPass = render_pass_.vk_render_pass;
-	render_pass_info.framebuffer = render_pass_.swap_chain_framebuffers[swapchain_image];
+	render_pass_info.framebuffer = render_pass_.framebuffers[swapchain_image];
 	render_pass_info.renderArea.offset = { 0, 0 };
 	render_pass_info.renderArea.extent = vulkan_backend_.getSwapChainExtent();
 

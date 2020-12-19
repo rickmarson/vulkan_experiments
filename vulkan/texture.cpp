@@ -223,6 +223,43 @@ void Texture::createDepthStencilAttachment(uint32_t width, uint32_t height, VkSa
     transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 }
 
+void Texture::createDepthOnlyAttachment(uint32_t width, uint32_t height, bool enable_sampling, VkSampleCountFlagBits num_samples) {
+    if (!isFormatSupported(backend_->getPhysicalDevice(),
+        VK_FORMAT_D16_UNORM,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+        std::cerr << "Error creating depth attachment image" << std::endl;
+        std::cerr << "VK_FORMAT_D24_UNORM_S8_UINT texture format is not supported on the selected device!" << std::endl;
+        return;
+    }
+
+    width_ = width;
+    height_ = height;
+    channels_ = 1;
+    mip_levels_ = 1;
+    vk_format_ = VK_FORMAT_D16_UNORM;
+    vk_usage_flags_ = enable_sampling ? (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    vk_tiling_ = VK_IMAGE_TILING_OPTIMAL;
+    vk_mem_props_ = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    vk_num_samples_ = num_samples;
+
+    if (!createImage()) {
+        if (vk_image_ != VK_NULL_HANDLE) {
+            vkDestroyImage(device_, vk_image_, nullptr);
+        }
+        return;
+    }
+
+    vk_image_view_ = backend_->createImageView(vk_image_, vk_format_, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+    if (vk_image_view_ == VK_NULL_HANDLE) {
+        vkDestroyImage(device_, vk_image_, nullptr);
+        vkFreeMemory(device_, vk_memory_, nullptr);
+    }
+
+    transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+}
+
 void Texture::createDepthStorageImage(uint32_t width, uint32_t height, bool as_rgba32) {
     VkFormat format = as_rgba32 ? VK_FORMAT_R32G32B32A32_SFLOAT : VK_FORMAT_R32_SFLOAT;
 

@@ -37,6 +37,7 @@ public:
 	void setLightPosition(const glm::vec3 pos);
 	void setLightColour(const glm::vec4 colour, float intensity = 1.0f);
 	void setAmbientColour(const glm::vec4 colour, float intensity = 1.0f);
+	void enableShadows(); // call after setLightPosition()
 	
 	const SceneData& getSceneData() const { return scene_data_; }
 
@@ -58,14 +59,19 @@ public:
 	std::shared_ptr<Texture>& getSceneDepthBuffer() { return scene_depth_buffer_; }
 
 	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index);
+	void updateShadowMap();
 
 private:
 	void updateCameraTransform();
 	glm::mat4 lookAtMatrix() const;
+	glm::mat4 lightViewMatrix() const;
+	glm::mat4 shadowMapProjection(bool premultiply_bias = false) const;
+	void setupShadowMapAssets();
+	void createShadowMapDescriptors();
 
 	VulkanBackend* backend_;
 	SceneData scene_data_;
-	UniformBuffer uniform_buffer_;
+	UniformBuffer scene_data_buffer_;
 	std::shared_ptr<Texture> scene_depth_buffer_;
 	std::map<std::string, std::vector<VkDescriptorSet>> vk_descriptor_sets_;
 
@@ -82,4 +88,16 @@ private:
 	glm::vec3 camera_look_at_;
 	glm::mat4 camera_transform_ = glm::mat4(1.0f);
 	bool follow_target_ = false;
+
+	bool shadows_enabled_ = false;
+	const uint32_t shadow_map_width_ = 2048;
+	const uint32_t shadow_map_height_ = 2048;
+	RenderPass shadow_map_render_pass_;
+	Pipeline shadow_map_pipeline_;
+	ShadowMapData shadow_map_data_;
+	ShadowMapProj shadow_map_proj_;
+	UniformBuffer shadow_map_data_buffer_;
+	UniformBuffer shadow_map_proj_buffer_;
+	std::shared_ptr<Texture> shadow_map_;
+	std::vector<VkDescriptorSet> vk_shadow_descriptor_sets_;
 };

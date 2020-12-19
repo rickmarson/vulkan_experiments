@@ -24,6 +24,7 @@ public:
     void loadImageRGBA(uint32_t width, uint32_t height, uint32_t channels, bool genMipMaps, const std::vector<unsigned char>& pixels, bool srgb = false);
     void createColourAttachment(uint32_t width, uint32_t height, VkFormat format, VkSampleCountFlagBits num_samples);
     void createDepthStencilAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits num_samples);
+    void createDepthOnlyAttachment(uint32_t width, uint32_t height, bool enable_sampling = false, VkSampleCountFlagBits num_samples = VK_SAMPLE_COUNT_1_BIT);
     void createDepthStorageImage(uint32_t width, uint32_t height, bool as_rgba32 = false);
     bool isValid() const { return vk_image_ != VK_NULL_HANDLE && vk_memory_ != VK_NULL_HANDLE && vk_image_view_ != VK_NULL_HANDLE; }
 

@@ -353,122 +353,182 @@ void VulkanBackend::freeCommandBuffers(std::vector<VkCommandBuffer>& cmd_buffers
 RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
     // create multisampled colour attachment
     auto extent = getSwapChainExtent();
-   
-    auto colour_texture = Texture::createTexture(config.name + "_colour_attachment", device_, this);
-    colour_texture->createColourAttachment(extent.width, extent.height, swap_chain_image_format_, config.msaa_samples);
+    
+    std::vector<VkAttachmentDescription> attachments;
 
-    // create depth attachment
-    auto depth_texture = Texture::createTexture(config.name + "_depth_attachment", device_, this);
-    depth_texture->createDepthStencilAttachment(extent.width, extent.height, config.msaa_samples);
+    std::shared_ptr<Texture> colour_texture;
+    uint32_t colour_attachment_idx = ~0;
+    if (config.has_colour) {
+        // create colour attachment
+        if (!config.external_colour_attchment) {
+            colour_texture = Texture::createTexture(config.name + "_colour_attachment", device_, this);
+            colour_texture->createColourAttachment(extent.width, extent.height, swap_chain_image_format_, config.msaa_samples);
+        } else {
+            colour_texture = config.external_colour_attchment;
+        }
 
-    VkAttachmentDescription color_attachment{};
-    color_attachment.format = swap_chain_image_format_;
-    color_attachment.samples = config.msaa_samples;
-    color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color_attachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        VkAttachmentDescription color_attachment{};
+        color_attachment.format = swap_chain_image_format_;
+        color_attachment.samples = config.msaa_samples;
+        color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        color_attachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    VkAttachmentReference color_attachment_ref{};
-    color_attachment_ref.attachment = 0;
-    color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        attachments.push_back(color_attachment);
+        colour_attachment_idx = 0;
+    }
+    
+    std::shared_ptr<Texture> depth_texture;
+    uint32_t depth_attachment_idx = ~0;
+    if (config.has_depth) {
+        // create depth stencil attachment
+        if (!config.external_depth_stencil_attchment) {
+            depth_texture = Texture::createTexture(config.name + "_depth_attachment", device_, this);
+            depth_texture->createDepthStencilAttachment(extent.width, extent.height, config.msaa_samples);
+        } else {
+            depth_texture = config.external_depth_stencil_attchment;
+        }
 
-    VkAttachmentDescription depth_attachment{};
-    depth_attachment.format = depth_texture->getFormat();
-    depth_attachment.samples = config.msaa_samples;
-    depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depth_attachment.storeOp = config.store_depth ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        VkAttachmentDescription depth_attachment{};
+        depth_attachment.format = depth_texture->getFormat();
+        depth_attachment.samples = config.msaa_samples;
+        depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depth_attachment.storeOp = config.store_depth ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-    VkAttachmentReference depth_attachment_ref{};
-    depth_attachment_ref.attachment = 1;
-    depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        attachments.push_back(depth_attachment);
+        depth_attachment_idx = colour_attachment_idx == 0 ? 1 : 0;
+    }
 
-    VkAttachmentDescription color_attachment_resolve{};
-    color_attachment_resolve.format = swap_chain_image_format_;
-    color_attachment_resolve.samples = VK_SAMPLE_COUNT_1_BIT;
-    color_attachment_resolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    color_attachment_resolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    color_attachment_resolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    color_attachment_resolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    color_attachment_resolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color_attachment_resolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    uint32_t resolve_attachment_idx = ~0;
+    if (config.msaa_samples != VK_SAMPLE_COUNT_1_BIT) {
+        VkAttachmentDescription color_attachment_resolve{};
+        color_attachment_resolve.format = swap_chain_image_format_;
+        color_attachment_resolve.samples = VK_SAMPLE_COUNT_1_BIT;
+        color_attachment_resolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        color_attachment_resolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        color_attachment_resolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        color_attachment_resolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        color_attachment_resolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        color_attachment_resolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-    VkAttachmentReference color_attachment_resolve_ref{};
-    color_attachment_resolve_ref.attachment = 2;
-    color_attachment_resolve_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        attachments.push_back(color_attachment_resolve);
+        if (depth_attachment_idx >= 0) {
+            resolve_attachment_idx = depth_attachment_idx + 1;
+        } else if (colour_attachment_idx >= 0) {
+            resolve_attachment_idx = colour_attachment_idx + 1;
+        } else {
+            resolve_attachment_idx = 0;
+        } 
+    }
 
     std::vector<VkSubpassDescription> subpasses;
     std::vector<VkSubpassDependency> subpass_dependencies;
     auto subpass_count = config.subpasses.size();
     subpasses.resize(subpass_count);
-    subpass_dependencies.resize(subpass_count);
 
     for (auto i = 0; i < subpass_count; ++i) {
         auto& sub = config.subpasses[i];
         subpasses[i].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        subpasses[i].colorAttachmentCount = sub.use_colour_attachment ? 1 : 0;
-        subpasses[i].pColorAttachments = sub.use_colour_attachment ? &color_attachment_ref : nullptr;
-        subpasses[i].pDepthStencilAttachment = sub.use_depth_stencil_attachemnt ? &depth_attachment_ref : nullptr;
 
-        if (i == config.subpasses.size() - 1) {
+        if (sub.use_colour_attachment && config.has_colour) {
+            VkAttachmentReference color_attachment_ref{};
+            color_attachment_ref.attachment = colour_attachment_idx;
+            color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+            subpasses[i].colorAttachmentCount = 1;
+            subpasses[i].pColorAttachments = &color_attachment_ref;
+        } else {
+            subpasses[i].colorAttachmentCount = 0;
+            subpasses[i].pColorAttachments = nullptr;
+        }
+        
+        if (sub.use_depth_stencil_attachemnt && config.has_depth) {
+            VkAttachmentReference depth_attachment_ref{};
+            depth_attachment_ref.attachment = depth_attachment_idx;
+            depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+            subpasses[i].pDepthStencilAttachment = &depth_attachment_ref;
+        } else {
+            subpasses[i].pDepthStencilAttachment = nullptr;
+        }
+
+        if (i == config.subpasses.size() - 1 && config.msaa_samples != VK_SAMPLE_COUNT_1_BIT) {
+            VkAttachmentReference color_attachment_resolve_ref{};
+            color_attachment_resolve_ref.attachment = resolve_attachment_idx;
+            color_attachment_resolve_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             subpasses[i].pResolveAttachments = &color_attachment_resolve_ref;
         } else {
             subpasses[i].pResolveAttachments = nullptr;
         }
 
-        uint32_t src_subpass;
-        uint32_t dst_subpass;
+        for (auto& dep : sub.dependencies) {      
+            uint32_t src_subpass = dep.src_subpass >= 0 ? dep.src_subpass : VK_SUBPASS_EXTERNAL;
+            uint32_t dst_subpass = dep.dst_subpass >= 0 ? dep.dst_subpass : VK_SUBPASS_EXTERNAL;
 
-        if (i == 0) {
-            src_subpass = VK_SUBPASS_EXTERNAL;
-            dst_subpass = 0;
-        } else {
-            src_subpass = i - 1;
-            dst_subpass = i;
-        }
-      
-        VkPipelineStageFlags src_stage;
-        VkPipelineStageFlags dst_stage;
-        VkAccessFlags src_access;
-        VkAccessFlags dst_access;
+            VkPipelineStageFlags src_stage;
+            VkPipelineStageFlags dst_stage;
+            VkAccessFlags src_access;
+            VkAccessFlags dst_access;
+            VkDependencyFlags flags = 0;
 
-        switch (sub.src_dependency) {
-            case SubpassConfig::Dependency::NONE:
-                src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-                src_access = 0;
-                break;
-            case SubpassConfig::Dependency::COLOUR_ATTACHMENT:
-                src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-                src_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-                break;
-        }
+            switch (dep.src_dependency) {
+                case SubpassConfig::DependencyType::NONE:
+                    src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                    src_access = 0;
+                    break;
+                case SubpassConfig::DependencyType::COLOUR_ATTACHMENT:
+                    src_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                    src_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                    break;
+                case SubpassConfig::DependencyType::FRAGMENT_SHADER:
+                    src_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+                    src_access = VK_ACCESS_SHADER_READ_BIT;
+                    break;
+                case SubpassConfig::DependencyType::LATE_FRAGMENT_TESTS:
+                    src_stage = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+                    src_access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                    break;
+            }
 
-        switch (sub.dst_dependency) {
-            case SubpassConfig::Dependency::NONE:
-                dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-                dst_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-                break;
-            case SubpassConfig::Dependency::COLOUR_ATTACHMENT:
-                dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-                dst_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-                break;
+            switch (dep.dst_dependency) {
+                case SubpassConfig::DependencyType::NONE:
+                    dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                    dst_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                    break;
+                case SubpassConfig::DependencyType::COLOUR_ATTACHMENT:
+                    dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                    dst_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                    break;
+                case SubpassConfig::DependencyType::FRAGMENT_SHADER:
+                    dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+                    dst_access = VK_ACCESS_SHADER_READ_BIT;
+                    flags = VK_DEPENDENCY_BY_REGION_BIT;
+                    break;
+                case SubpassConfig::DependencyType::EARLY_FRAGMENT_TESTS:
+                    dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+                    dst_access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                    flags = VK_DEPENDENCY_BY_REGION_BIT;
+                    break;
+            }
+        
+            VkSubpassDependency dependency;
+            dependency.srcSubpass = src_subpass;
+            dependency.dstSubpass = dst_subpass;
+            dependency.srcStageMask = src_stage;
+            dependency.srcAccessMask = src_access;
+            dependency.dstStageMask = dst_stage;
+            dependency.dstAccessMask = dst_access;
+            dependency.dependencyFlags = flags;
+            subpass_dependencies.push_back(dependency);
         }
-     
-        subpass_dependencies[i].srcSubpass = src_subpass;
-        subpass_dependencies[i].dstSubpass = dst_subpass;
-        subpass_dependencies[i].srcStageMask = src_stage;
-        subpass_dependencies[i].srcAccessMask = src_access;
-        subpass_dependencies[i].dstStageMask = dst_stage;
-        subpass_dependencies[i].dstAccessMask = dst_access;
     }
-
-    std::array<VkAttachmentDescription, 3> attachments = { color_attachment, depth_attachment, color_attachment_resolve };
 
     VkRenderPassCreateInfo render_pass_info{};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -492,16 +552,46 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
     render_pass.colour_attachment = std::move(colour_texture);
     render_pass.depth_attachment = std::move(depth_texture);
 
-    // create the swapchain framebuffers for this render pass
-    render_pass.swap_chain_framebuffers.resize(swap_chain_image_views_.size());
+    // create the framebuffers for this render pass
+    if (!config.offscreen) {
+        render_pass.framebuffers.resize(swap_chain_image_views_.size());
 
-    for (size_t i = 0; i < swap_chain_image_views_.size(); i++) {
-        std::array<VkImageView, 3> framebuffer_attachments = {
-            render_pass.colour_attachment->getImageView(),
-            render_pass.depth_attachment->getImageView(),
-            swap_chain_image_views_[i]
-        };
+        for (size_t i = 0; i < swap_chain_image_views_.size(); i++) {
+            std::vector<VkImageView> framebuffer_attachments;
+            if (config.has_colour) {
+                framebuffer_attachments.push_back(render_pass.colour_attachment->getImageView());
+            }
+            if (config.has_depth) {
+                framebuffer_attachments.push_back(render_pass.depth_attachment->getImageView());
+            }
+            framebuffer_attachments.push_back(swap_chain_image_views_[i]); 
 
+            VkFramebufferCreateInfo framebuffer_info{};
+            framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            framebuffer_info.renderPass = vk_render_pass;
+            framebuffer_info.attachmentCount = static_cast<uint32_t>(framebuffer_attachments.size());
+            framebuffer_info.pAttachments = framebuffer_attachments.data();
+            framebuffer_info.width = swap_chain_extent_.width;
+            framebuffer_info.height = swap_chain_extent_.height;
+            framebuffer_info.layers = 1;
+
+            if (vkCreateFramebuffer(device_, &framebuffer_info, nullptr, &render_pass.framebuffers[i]) != VK_SUCCESS) {
+                std::cerr << "Failed to create framebuffer!" << std::endl;
+                // TODO cleanup
+                return RenderPass{};
+            }
+        }
+    } else {
+        render_pass.framebuffers.resize(1);
+
+        std::vector<VkImageView> framebuffer_attachments;
+        if (config.has_colour) {
+            framebuffer_attachments.push_back(render_pass.colour_attachment->getImageView());
+        }
+        if (config.has_depth) {
+            framebuffer_attachments.push_back(render_pass.depth_attachment->getImageView());
+        }
+      
         VkFramebufferCreateInfo framebuffer_info{};
         framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebuffer_info.renderPass = vk_render_pass;
@@ -511,7 +601,7 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
         framebuffer_info.height = swap_chain_extent_.height;
         framebuffer_info.layers = 1;
 
-        if (vkCreateFramebuffer(device_, &framebuffer_info, nullptr, &render_pass.swap_chain_framebuffers[i]) != VK_SUCCESS) {
+        if (vkCreateFramebuffer(device_, &framebuffer_info, nullptr, &render_pass.framebuffers[0]) != VK_SUCCESS) {
             std::cerr << "Failed to create framebuffer!" << std::endl;
             // TODO cleanup
             return RenderPass{};
@@ -533,13 +623,17 @@ Pipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineConfig& con
     vert_shader_stage_info.module = config.vertex->getShader();
     vert_shader_stage_info.pName = "main";
 
-    VkPipelineShaderStageCreateInfo frag_shader_stage_info{};
-    frag_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    frag_shader_stage_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    frag_shader_stage_info.module = config.fragment->getShader();
-    frag_shader_stage_info.pName = "main";
+    std::vector<VkPipelineShaderStageCreateInfo> shader_stages = { vert_shader_stage_info };
 
-    std::vector<VkPipelineShaderStageCreateInfo> shader_stages = { vert_shader_stage_info, frag_shader_stage_info };
+    if (config.fragment) {
+        VkPipelineShaderStageCreateInfo frag_shader_stage_info{};
+        frag_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        frag_shader_stage_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        frag_shader_stage_info.module = config.fragment->getShader();
+        frag_shader_stage_info.pName = "main";
+
+        shader_stages.push_back(frag_shader_stage_info);
+    }
 
     if (config.tessellation) {
         VkPipelineShaderStageCreateInfo tess_ctrl_shader_stage_info{};
@@ -1472,10 +1566,10 @@ void VulkanBackend::destroyBuffer(Buffer& buffer) {
 }
 
 void VulkanBackend::destroyRenderPass(RenderPass& render_pass) {
-    for (auto& framebuffer : render_pass.swap_chain_framebuffers) {
+    for (auto& framebuffer : render_pass.framebuffers) {
         vkDestroyFramebuffer(device_, framebuffer, nullptr);
     }
-    render_pass.swap_chain_framebuffers.clear();
+    render_pass.framebuffers.clear();
     render_pass.colour_attachment.reset();
     render_pass.depth_attachment.reset();
 
@@ -1534,11 +1628,6 @@ bool VulkanBackend::assembleGraphicsPipelineLayoutInfo(const GraphicsPipelineCon
     // assemble layout information from all shaders
     std::map<uint32_t, std::vector<VkDescriptorSetLayoutBinding>> layout_bindings_by_set;
 
-    // vertex and fragment must be present
-    if (!config.vertex || !config.fragment) {
-        return false;
-    }
-
     const auto& vertex_layouts = config.vertex->getDescriptorSetLayouts();
     for (const auto& layout : vertex_layouts) {
         if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
@@ -1554,25 +1643,26 @@ bool VulkanBackend::assembleGraphicsPipelineLayoutInfo(const GraphicsPipelineCon
         layout_info.pipeline_descriptor_metadata.set_bindings[meta.first] = meta.second;
     }
 
-    const auto& fragment_layouts = config.fragment->getDescriptorSetLayouts();
-    for (const auto& layout : fragment_layouts) {
-        if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
-            layout_bindings_by_set[layout.id] = layout.layout_bindings;
+    if (config.fragment) {
+        const auto& fragment_layouts = config.fragment->getDescriptorSetLayouts();
+        for (const auto& layout : fragment_layouts) {
+            if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
+                layout_bindings_by_set[layout.id] = layout.layout_bindings;
+            }
+            else {
+                auto& bindings_array = layout_bindings_by_set[layout.id];
+                bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+            }
         }
-        else {
-            auto& bindings_array = layout_bindings_by_set[layout.id];
-            bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
-        }
-    }
-    const auto& fragment_descriptor_metadata = config.fragment->getDescriptorsMetadata();
-    for (const auto& meta : fragment_descriptor_metadata.set_bindings) {
-        auto& bindings_map = layout_info.pipeline_descriptor_metadata.set_bindings[meta.first];
-        for (const auto& src_binding : meta.second) {
-            bindings_map.insert(src_binding);
+        const auto& fragment_descriptor_metadata = config.fragment->getDescriptorsMetadata();
+        for (const auto& meta : fragment_descriptor_metadata.set_bindings) {
+            auto& bindings_map = layout_info.pipeline_descriptor_metadata.set_bindings[meta.first];
+            for (const auto& src_binding : meta.second) {
+                bindings_map.insert(src_binding);
+            }
         }
     }
 
-    // optional shaders
     if (config.tessellation) {
         // tessellation control
         const auto& tess_ctrl_layouts = config.tessellation.control->getDescriptorSetLayouts();
@@ -1660,22 +1750,24 @@ bool VulkanBackend::assembleGraphicsPipelineLayoutInfo(const GraphicsPipelineCon
     std::set<PushConstantBlock, decltype(compare)> push_constants_temp(compare);
 
     const auto& vertex_push_constants = config.vertex->getPushConstants();
-    const auto& fragment_push_constants = config.fragment->getPushConstants();
 
     for (const auto& pc : vertex_push_constants) {
         push_constants_temp.insert(pc);
     }
 
-    for (const auto& pc : fragment_push_constants) {
-        auto dst_iter = push_constants_temp.find(pc);
-        if (dst_iter == push_constants_temp.end()) {
-            push_constants_temp.insert(pc);
-        }
-        else {
-            auto new_block = *(dst_iter);
-            new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
-            push_constants_temp.erase(dst_iter);
-            push_constants_temp.insert(new_block);
+    if (config.fragment) {
+        const auto& fragment_push_constants = config.fragment->getPushConstants();
+        for (const auto& pc : fragment_push_constants) {
+            auto dst_iter = push_constants_temp.find(pc);
+            if (dst_iter == push_constants_temp.end()) {
+                push_constants_temp.insert(pc);
+            }
+            else {
+                auto new_block = *(dst_iter);
+                new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
+                push_constants_temp.erase(dst_iter);
+                push_constants_temp.insert(new_block);
+            }
         }
     }
 
