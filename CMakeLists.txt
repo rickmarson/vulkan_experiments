@@ -34,6 +34,7 @@ set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/utilities/imgui)
 set(IMGUI_SOURCES ${IMGUI_DIR}/imgui.cpp 
 		          ${IMGUI_DIR}/imgui_draw.cpp 
 				  ${IMGUI_DIR}/imgui_widgets.cpp
+				  ${IMGUI_DIR}/imgui_tables.cpp
 )
 set(IMGUI_SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/imgui_vs.spv
 	              ${CMAKE_CURRENT_SOURCE_DIR}/shaders/imgui_fs.spv)

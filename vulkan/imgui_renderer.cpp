@@ -160,6 +160,7 @@ bool ImGuiRenderer::createGraphicsPipeline(RenderPass& render_pass, uint32_t sub
     config.cullBackFace = false;
     config.enableDepthTesting = false;
     config.enableTransparency = true;
+    config.dynamicStates = true;
 
     ui_pipeline_ = vulkan_backend_->createGraphicsPipeline(config);
 

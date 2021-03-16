@@ -61,6 +61,7 @@ struct GraphicsPipelineConfig {
     bool enableStencilTest = false;
     bool enableTransparency = false;
     bool showWireframe = false;
+    bool dynamicStates = false;
 
     RenderPass render_pass;
     uint32_t subpass_number = 0;

@@ -749,6 +749,15 @@ Pipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineConfig& con
     depth_stencil.front = {}; // Optional
     depth_stencil.back = {}; // Optional
 
+    std::array<VkDynamicState, 2> dynamic_states = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+
+    VkPipelineDynamicStateCreateInfo dynamic_state_info{};
+    dynamic_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamic_state_info.pNext = nullptr;
+    dynamic_state_info.flags = 0;
+    dynamic_state_info.dynamicStateCount = config.dynamicStates ? 2 : 0;
+    dynamic_state_info.pDynamicStates = config.dynamicStates ? dynamic_states.data() : nullptr;
+
     VkPipelineLayoutCreateInfo pipeline_layout_info{};
     pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(layout_info.descriptors_set_layouts_aux.size());
@@ -773,7 +782,7 @@ Pipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineConfig& con
     pipeline_info.pMultisampleState = &multisampling;
     pipeline_info.pDepthStencilState = &depth_stencil;
     pipeline_info.pColorBlendState = &color_blending;
-    pipeline_info.pDynamicState = nullptr; // Optional
+    pipeline_info.pDynamicState = &dynamic_state_info;
     pipeline_info.layout = pipeline_layout;
     pipeline_info.renderPass = config.render_pass.vk_render_pass;
     pipeline_info.subpass = config.subpass_number;
