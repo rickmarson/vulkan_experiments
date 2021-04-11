@@ -363,6 +363,7 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
 
     std::shared_ptr<Texture> colour_texture;
     uint32_t colour_attachment_idx = ~0;
+    VkAttachmentReference color_attachment_ref{};
     if (config.has_colour) {
         // create colour attachment
         if (!config.external_colour_attchment) {
@@ -384,10 +385,13 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
 
         attachments.push_back(color_attachment);
         colour_attachment_idx = 0;
+        color_attachment_ref.attachment = colour_attachment_idx;
+        color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     }
     
     std::shared_ptr<Texture> depth_texture;
     uint32_t depth_attachment_idx = ~0;
+    VkAttachmentReference depth_attachment_ref{};
     if (config.has_depth) {
         // create depth stencil attachment
         if (!config.external_depth_stencil_attchment) {
@@ -409,9 +413,12 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
 
         attachments.push_back(depth_attachment);
         depth_attachment_idx = colour_attachment_idx == 0 ? 1 : 0;
+        depth_attachment_ref.attachment = depth_attachment_idx;
+        depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     }
 
     uint32_t resolve_attachment_idx = ~0;
+    VkAttachmentReference color_attachment_resolve_ref{};
     if (config.msaa_samples != VK_SAMPLE_COUNT_1_BIT) {
         VkAttachmentDescription color_attachment_resolve{};
         color_attachment_resolve.format = swap_chain_image_format_;
@@ -430,7 +437,10 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
             resolve_attachment_idx = colour_attachment_idx + 1;
         } else {
             resolve_attachment_idx = 0;
-        } 
+        }
+        
+        color_attachment_resolve_ref.attachment = resolve_attachment_idx;
+        color_attachment_resolve_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     }
 
     std::vector<VkSubpassDescription> subpasses;
@@ -443,10 +453,6 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
         subpasses[i].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 
         if (sub.use_colour_attachment && config.has_colour) {
-            VkAttachmentReference color_attachment_ref{};
-            color_attachment_ref.attachment = colour_attachment_idx;
-            color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
             subpasses[i].colorAttachmentCount = 1;
             subpasses[i].pColorAttachments = &color_attachment_ref;
         } else {
@@ -455,19 +461,12 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
         }
         
         if (sub.use_depth_stencil_attachemnt && config.has_depth) {
-            VkAttachmentReference depth_attachment_ref{};
-            depth_attachment_ref.attachment = depth_attachment_idx;
-            depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
             subpasses[i].pDepthStencilAttachment = &depth_attachment_ref;
         } else {
             subpasses[i].pDepthStencilAttachment = nullptr;
         }
 
         if (i == config.subpasses.size() - 1 && config.msaa_samples != VK_SAMPLE_COUNT_1_BIT) {
-            VkAttachmentReference color_attachment_resolve_ref{};
-            color_attachment_resolve_ref.attachment = resolve_attachment_idx;
-            color_attachment_resolve_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             subpasses[i].pResolveAttachments = &color_attachment_resolve_ref;
         } else {
             subpasses[i].pResolveAttachments = nullptr;
