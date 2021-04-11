@@ -122,10 +122,11 @@ bool RainyAlley::loadAssets() {
 	scene_manager_->setCameraPosition(glm::vec3(-10.0f, 0.0f, 4.0f));
 	scene_manager_->setCameraTarget(glm::vec3(0.0f, 0.0f, 2.0f));
 
-	scene_manager_->setLightPosition(glm::vec3(0.4f, -0.1f, 5.7f));
+	auto light_pos = glm::vec3(0.4f, -0.1f, 5.7f);
+	scene_manager_->setLightPosition(light_pos);
 	scene_manager_->setLightColour(glm::vec4(1.0f, 0.971f, 0.492f, 1.0f), 4.0f);
 	scene_manager_->setAmbientColour(glm::vec4(0.02f));
-	scene_manager_->enableShadows();
+	scene_manager_->enableShadows(light_pos, glm::vec3(-90.f, 0.f, 0.f));
 
 	scene_manager_->loadFromGlb("meshes/alley.glb");
 
@@ -153,8 +154,7 @@ bool RainyAlley::setupScene() {
 	RenderPassConfig render_pass_config;
 	render_pass_config.name = "Main Pass";
 	render_pass_config.msaa_samples = vulkan_backend_.getMaxMSAASamples();
-	render_pass_config.store_depth = false;
-	
+
 	SubpassConfig alley_subpass;
 	alley_subpass.use_colour_attachment = true;
 	alley_subpass.use_depth_stencil_attachemnt = true;
@@ -202,7 +202,7 @@ bool RainyAlley::setupScene() {
 	}
 
 	// only need to do this once as both the scene geometry and the light position are static
-	//scene_manager_->updateShadowMap();
+	scene_manager_->updateShadowMap();
 
 	drawUi();
 
@@ -350,7 +350,10 @@ RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
 
 	VkDeviceSize offsets[] = { 0 };
 	auto& alley_scene_descriptors = scene_manager_->getDescriptorSets(alley_graphics_pipeline_.name);
+	// scene data
 	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, alley_graphics_pipeline_.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &alley_scene_descriptors[swapchain_image], 0, nullptr);
+	// shadow map data
+	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, alley_graphics_pipeline_.vk_pipeline_layout, SHADOW_MAP_SET_ID, 1, &alley_scene_descriptors[vulkan_backend_.getSwapChainSize() + swapchain_image], 0, nullptr);
 
 	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, alley_graphics_pipeline_.vk_pipeline);
 

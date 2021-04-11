@@ -34,10 +34,10 @@ public:
 	void setCameraTarget(const glm::vec3& target);
 	void setCameraTransform(const glm::mat4 transform);
 
-	void setLightPosition(const glm::vec3 pos);
-	void setLightColour(const glm::vec4 colour, float intensity = 1.0f);
-	void setAmbientColour(const glm::vec4 colour, float intensity = 1.0f);
-	void enableShadows(); // call after setLightPosition()
+	void setLightPosition(const glm::vec3& pos);
+	void setLightColour(const glm::vec4& colour, float intensity = 1.0f);
+	void setAmbientColour(const glm::vec4& colour, float intensity = 1.0f);
+	void enableShadows(const glm::vec3& light_pos, const glm::vec3& light_euler);   // pitch, yaw, roll
 	
 	const SceneData& getSceneData() const { return scene_data_; }
 
@@ -58,15 +58,15 @@ public:
 	std::vector<VkDescriptorSet>& getDescriptorSets(const std::string& pipeline_name);
 	std::shared_ptr<Texture>& getSceneDepthBuffer() { return scene_depth_buffer_; }
 
-	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index);
+	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index, bool with_material = true);
 	void updateShadowMap();
 
 private:
 	void updateCameraTransform();
 	glm::mat4 lookAtMatrix() const;
-	glm::mat4 lightViewMatrix() const;
-	glm::mat4 shadowMapProjection(bool premultiply_bias = false) const;
-	void setupShadowMapAssets();
+	glm::mat4 lightViewMatrix(const glm::vec3& light_pos, const glm::vec3& light_euler) const;
+	glm::mat4 shadowMapProjection() const;
+	void setupShadowMapAssets(const glm::vec3& light_pos, const glm::vec3& light_euler);
 	void createShadowMapDescriptors();
 
 	VulkanBackend* backend_;
@@ -95,9 +95,7 @@ private:
 	RenderPass shadow_map_render_pass_;
 	Pipeline shadow_map_pipeline_;
 	ShadowMapData shadow_map_data_;
-	ShadowMapProj shadow_map_proj_;
 	UniformBuffer shadow_map_data_buffer_;
-	UniformBuffer shadow_map_proj_buffer_;
 	std::shared_ptr<Texture> shadow_map_;
 	std::vector<VkDescriptorSet> vk_shadow_descriptor_sets_;
 };

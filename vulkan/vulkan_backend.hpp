@@ -7,6 +7,7 @@
 #pragma once
 
 #include "common_definitions.hpp"
+#include <optional>
 
 // Interfaces
 class ShaderModule;
@@ -28,6 +29,7 @@ struct SubpassConfig {
 
 struct RenderPassConfig {
     std::string name;
+    std::optional<VkExtent2D> framebuffer_size = std::nullopt;
     VkSampleCountFlagBits msaa_samples = VK_SAMPLE_COUNT_1_BIT;
     bool offscreen = false;
     bool has_colour = true;

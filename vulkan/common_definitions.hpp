@@ -175,21 +175,17 @@ const std::string SCENE_DATA_BINDING_NAME = "scene";  // holds scene-wide inform
 const std::string SCENE_TEXTURES_ARRAY = "scene_textures"; // global binding point holding all textures in the scene
 const std::string SCENE_DEPTH_BUFFER_STORAGE = "scene_depth_buffer";  // texel storage buffers used to store / load depth info across pipelines
 
-// bindings for shadow-map lookup on the lit pipeline(s)
-struct ShadowMapProj {
-    glm::mat4 view_proj_bias;
-};
-
-const uint32_t SHADOW_MAP_SET_ID = 3;
-const std::string SHADOW_MAP_PROJ_NAME = "shadow_map_proj";
-const std::string SHADOW_MAP_NAME = "shadow_map";
-
-// bindings on the shadow map generation pipeline
 struct ShadowMapData {
     glm::mat4 light_view = glm::mat4(1.0f);
     glm::mat4 shadow_proj = glm::mat4(1.0f);
 };
 
+// bindings for shadow-map lookup on the lit pipeline(s)
+const uint32_t SHADOW_MAP_SET_ID = 3;
+const std::string SHADOW_MAP_PROJ_NAME = "shadow_map_data";
+const std::string SHADOW_MAP_NAME = "shadow_map";
+
+// bindings on the shadow map generation pipeline
 const uint32_t SHADOW_MAP_DATA_UNIFORM_SET_ID = 0;  
 const std::string SHADOW_MAP_DATA_BINDING_NAME = "shadow";
 // ----

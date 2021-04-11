@@ -18,6 +18,11 @@ layout(set = 0, binding = 0) uniform SceneData {
     vec4 ambient_intensity;
 } scene;
 
+layout(set = 3, binding = 0) uniform ShadowMapData {
+    mat4 view;
+    mat4 proj;
+} shadow_map_data;
+
 void main() {
     mat4 model_view = scene.view; // particles are alredy in world coords
     mat4 proj = scene.proj;

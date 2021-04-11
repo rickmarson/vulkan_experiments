@@ -114,7 +114,6 @@ bool ModelViewer::setupScene() {
 	RenderPassConfig render_pass_config;
 	render_pass_config.name = "Main Pass";
 	render_pass_config.msaa_samples = vulkan_backend_.getMaxMSAASamples();
-	render_pass_config.store_depth = false;
 	
 	SubpassConfig model_subpass;
 	model_subpass.use_colour_attachment = true;

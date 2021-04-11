@@ -256,8 +256,14 @@ void Texture::createDepthOnlyAttachment(uint32_t width, uint32_t height, bool en
         vkDestroyImage(device_, vk_image_, nullptr);
         vkFreeMemory(device_, vk_memory_, nullptr);
     }
+     
+    VkImageLayout layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    if (enable_sampling) {
+        createSampler();
+        layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    }
 
-    transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED, layout);
 }
 
 void Texture::createDepthStorageImage(uint32_t width, uint32_t height, bool as_rgba32) {
@@ -384,7 +390,9 @@ void Texture::transitionImageLayout(VkImage image, VkFormat format, VkImageAspec
         src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
         dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     }
-    else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+    else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && (
+             new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL || new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+            ) {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 

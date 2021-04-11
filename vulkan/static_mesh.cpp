@@ -84,11 +84,13 @@ void StaticMesh::updateDescriptorSets(const DescriptorSetMetadata& metadata) {
     }
 }
 
-void StaticMesh::drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index) {
+void StaticMesh::drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index, bool with_material) {
     vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, MODEL_UNIFORM_SET_ID, 1, &vk_descriptor_sets_[swapchain_index], 0, nullptr);
 
     for (auto& surface : surfaces_) {
-        vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, SURFACE_UNIFORM_SET_ID, 1, &surface.vk_descriptor_sets[swapchain_index], 0, nullptr);
+        if (with_material) {
+            vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, SURFACE_UNIFORM_SET_ID, 1, &surface.vk_descriptor_sets[swapchain_index], 0, nullptr);
+        }
         vkCmdDrawIndexed(cmd_buffer, surface.index_count, 1, surface.index_start, surface.vertex_start, 0);
     }
 }

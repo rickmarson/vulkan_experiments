@@ -1,6 +1,7 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
+#include "common.glsl"
 #include "lighting.glsl"
 
 layout(location = 0) in vec2 frag_tex_coord;
@@ -10,6 +11,7 @@ layout(location = 3) in vec3 eye_local;
 layout(location = 4) in vec3 light_local;
 layout(location = 5) in vec4 light_intensity;
 layout(location = 6) in vec4 ambient_intensity;
+layout(location = 7) in vec3 shadow_tex_coord;
 
 layout(set = 0, binding = 1) uniform sampler2D scene_textures[18];
 
@@ -25,6 +27,7 @@ layout(set = 2, binding = 0) uniform MaterialData {
 } material;
 
 layout(set = 0, binding = 2, rgba32f) uniform image2D scene_depth_buffer;
+layout(set = 3, binding = 1) uniform sampler2D shadow_map;
 
 layout(location = 0) out vec4 out_colour;
 
@@ -62,6 +65,13 @@ vec4 lit_surface() {
     return vec4(surface_color, diffuse_colour.w);
 }
 
+float shadow_factor() {
+    if (texture(shadow_map, shadow_tex_coord.xy).r < shadow_tex_coord.z - 0.005) {
+        return 0.2;
+    }
+    return 1.0;
+}
+
 void main() {
     ivec2 depth_idx = ivec2(gl_FragCoord.x, gl_FragCoord.y);
     vec4 depth_normal = vec4(depth, normal_world);
@@ -73,6 +83,6 @@ void main() {
     if (length(material.emissive_factor) > 0.0) {
         out_colour = emissive_surface();
     } else {
-        out_colour = lit_surface();
+        out_colour = lit_surface() * shadow_factor();
     }
 }

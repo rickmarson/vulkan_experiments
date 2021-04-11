@@ -26,6 +26,17 @@ bool worldToScreen(in mat4 proj, in mat4 view, in vec2 framebuffer_size, in vec3
 	return false;
 }
 
+void applyBias(inout vec4 pos) {
+	mat4 bias_matrix = mat4(
+		vec4(0.5, 0.0, 0.0, 0.0), 
+		vec4(0.0, 0.5, 0.0, 0.0),
+		vec4(0.0, 0.0, 1.0, 0.0),
+		vec4(0.5, 0.5, 0.0, 1.0)
+	);
+
+	pos = bias_matrix * pos;
+}
+
 mat3 objectLocalMatrix(in vec3 norm_world, in vec4 tan_world, in mat4 model_view) {
 	// note: this is not strictly correct (should be transpose(inverse(model_view))),
 	// but since we are not using non-uniform scaling it's an acceptable approximation

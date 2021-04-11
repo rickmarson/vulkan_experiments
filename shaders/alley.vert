@@ -15,6 +15,7 @@ layout(location = 3) out vec3 eye_local;
 layout(location = 4) out vec3 light_local;
 layout(location = 5) out vec4 light_intensity;
 layout(location = 6) out vec4 ambient_intensity;
+layout(location = 7) out vec3 shadow_tex_coord;
 
 layout(set = 0, binding = 0) uniform SceneData {
     mat4 view;
@@ -27,6 +28,12 @@ layout(set = 0, binding = 0) uniform SceneData {
 layout(set = 1, binding = 0) uniform ModelData {
     mat4 transform;
 } model;
+
+layout(set = 3, binding = 0) uniform ShadowMapData {
+    mat4 view;
+    mat4 proj;
+} shadow_map_data;
+
 
 void main() {
     mat4 model_view = scene.view * model.transform;
@@ -54,4 +61,13 @@ void main() {
     // save out depth and world normal for the custom depth buffer
     depth = gl_Position.z / gl_Position.w;
     normal_world = in_normal;   
+
+    // finally, calculate the vertex position in light space for shadow map lookup
+    mat4 light_model_view = shadow_map_data.view * model.transform;
+    mat4 light_proj = shadow_map_data.proj;
+    worldToVulkan(light_model_view);
+    projectionToVulkan(light_proj);
+    vec4 light_pos = light_proj * light_model_view * vec4(in_position, 1.0);
+    applyBias(light_pos);
+    shadow_tex_coord = light_pos.xyz / light_pos.w;
 }

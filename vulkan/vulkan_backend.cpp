@@ -352,7 +352,12 @@ void VulkanBackend::freeCommandBuffers(std::vector<VkCommandBuffer>& cmd_buffers
 
 RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
     // create multisampled colour attachment
-    auto extent = getSwapChainExtent();
+    VkExtent2D extent;
+    if (config.framebuffer_size.has_value()) {
+        extent = config.framebuffer_size.value();
+    } else {
+        extent = getSwapChainExtent();
+    }
     
     std::vector<VkAttachmentDescription> attachments;
 
@@ -400,7 +405,7 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
         depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depth_attachment.finalLayout = config.store_depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
         attachments.push_back(depth_attachment);
         depth_attachment_idx = colour_attachment_idx == 0 ? 1 : 0;
@@ -571,8 +576,8 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
             framebuffer_info.renderPass = vk_render_pass;
             framebuffer_info.attachmentCount = static_cast<uint32_t>(framebuffer_attachments.size());
             framebuffer_info.pAttachments = framebuffer_attachments.data();
-            framebuffer_info.width = swap_chain_extent_.width;
-            framebuffer_info.height = swap_chain_extent_.height;
+            framebuffer_info.width = extent.width;
+            framebuffer_info.height = extent.height;
             framebuffer_info.layers = 1;
 
             if (vkCreateFramebuffer(device_, &framebuffer_info, nullptr, &render_pass.framebuffers[i]) != VK_SUCCESS) {
@@ -597,8 +602,8 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
         framebuffer_info.renderPass = vk_render_pass;
         framebuffer_info.attachmentCount = static_cast<uint32_t>(framebuffer_attachments.size());
         framebuffer_info.pAttachments = framebuffer_attachments.data();
-        framebuffer_info.width = swap_chain_extent_.width;
-        framebuffer_info.height = swap_chain_extent_.height;
+        framebuffer_info.width = extent.width;
+        framebuffer_info.height = extent.height;
         framebuffer_info.layers = 1;
 
         if (vkCreateFramebuffer(device_, &framebuffer_info, nullptr, &render_pass.framebuffers[0]) != VK_SUCCESS) {

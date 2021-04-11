@@ -51,7 +51,7 @@ public:
 	void updateDescriptorSets(const DescriptorSetMetadata& metadata);
 	std::vector<VkDescriptorSet>& getDescriptorSets() { return vk_descriptor_sets_; }
 
-	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index);
+	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index, bool with_material = true);
 
 private:
 	std::string name_;

@@ -17,6 +17,7 @@
 #include <tiny_gltf.h>
 
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 namespace gltf = tinygltf;
 
@@ -255,7 +256,6 @@ SceneManager::~SceneManager() {
         backend_->destroyRenderPass(shadow_map_render_pass_);
 	    backend_->destroyPipeline(shadow_map_pipeline_);
         backend_->destroyUniformBuffer(shadow_map_data_buffer_);
-        backend_->destroyUniformBuffer(shadow_map_proj_buffer_);
         shadow_map_.reset();
     }
     vk_descriptor_sets_.clear();
@@ -387,22 +387,22 @@ void SceneManager::setCameraTransform(const glm::mat4 transform) {
     camera_transform_ = transform;
 }
 
-void SceneManager::setLightPosition(const glm::vec3 pos) {
+void SceneManager::setLightPosition(const glm::vec3& pos) {
     // need the light position to be consistent with the scene scale factor or it
     // will be off once it goes through the model matrix
     scene_data_.light_position = glm::vec4(pos / gltf_scale_factor_, 1.0f);
 }
 
-void SceneManager::setLightColour(const glm::vec4 colour, float intensity) {
+void SceneManager::setLightColour(const glm::vec4& colour, float intensity) {
     scene_data_.light_intensity = colour * intensity;
 }
 
-void SceneManager::setAmbientColour(const glm::vec4 colour, float intensity) {
+void SceneManager::setAmbientColour(const glm::vec4& colour, float intensity) {
     scene_data_.ambient_intensity = colour * intensity;
 }
 
-void SceneManager::enableShadows() {
-    setupShadowMapAssets();
+void SceneManager::enableShadows(const glm::vec3& light_pos, const glm::vec3& light_euler) {
+    setupShadowMapAssets(light_pos, light_euler);
     shadows_enabled_ = true;
 }
 
@@ -495,13 +495,21 @@ void SceneManager::deleteUniforms() {
 void SceneManager::createDescriptorSets(const std::string& pipeline_name, const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {
     const auto& layout = descriptor_set_layouts.find(SCENE_UNIFORM_SET_ID)->second;
     std::vector<VkDescriptorSetLayout> layouts(backend_->getSwapChainSize(), layout);
+
+    if (shadows_enabled_) {
+        const auto& shadow_layout = descriptor_set_layouts.find(SHADOW_MAP_SET_ID)->second;
+        for (auto i = 0; i < backend_->getSwapChainSize(); ++i) {
+            layouts.push_back(shadow_layout);
+        }
+    }
+
     VkDescriptorSetAllocateInfo alloc_info{};
     alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     alloc_info.descriptorPool = backend_->getDescriptorPool();
-    alloc_info.descriptorSetCount = backend_->getSwapChainSize();
+    alloc_info.descriptorSetCount = layouts.size();
     alloc_info.pSetLayouts = layouts.data();
 
-    std::vector<VkDescriptorSet> layout_descriptor_sets(backend_->getSwapChainSize());
+    std::vector<VkDescriptorSet> layout_descriptor_sets(layouts.size());
     if (vkAllocateDescriptorSets(backend_->getDevice(), &alloc_info, layout_descriptor_sets.data()) != VK_SUCCESS) {
         std::cerr << "Failed to allocate Mesh descriptor sets!" << std::endl;
         return;
@@ -521,7 +529,10 @@ void SceneManager::updateDescriptorSets(const std::string& pipeline_name, const 
     auto& descriptor_sets = vk_descriptor_sets_[pipeline_name];
 
     const auto& bindings = metadata.set_bindings.find(SCENE_UNIFORM_SET_ID)->second;
-    backend_->updateDescriptorSets(scene_data_buffer_, descriptor_sets, bindings.find(SCENE_DATA_BINDING_NAME)->second);
+    auto first = descriptor_sets.begin();
+    auto last = descriptor_sets.begin() + backend_->getSwapChainSize();
+    auto scene_descriptors = std::vector<VkDescriptorSet>(first, last);
+    backend_->updateDescriptorSets(scene_data_buffer_, scene_descriptors, bindings.find(SCENE_DATA_BINDING_NAME)->second);
 
     if (bindings.find(SCENE_TEXTURES_ARRAY) != bindings.end()) {
         auto textures_binding_point = bindings.find(SCENE_TEXTURES_ARRAY)->second;
@@ -536,10 +547,10 @@ void SceneManager::updateDescriptorSets(const std::string& pipeline_name, const 
             image_infos.push_back(image_info);
         }
 
-        for (size_t i = 0; i < descriptor_sets.size(); i++) {
+        for (size_t i = 0; i < scene_descriptors.size(); i++) {
             VkWriteDescriptorSet descriptor_write{};
             descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptor_write.dstSet = descriptor_sets[i];
+            descriptor_write.dstSet = scene_descriptors[i];
             descriptor_write.dstBinding = textures_binding_point;
             descriptor_write.dstArrayElement = 0;
             descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -551,7 +562,16 @@ void SceneManager::updateDescriptorSets(const std::string& pipeline_name, const 
     }
 
     if (bindings.find(SCENE_DEPTH_BUFFER_STORAGE) != bindings.end()){
-        scene_depth_buffer_->updateDescriptorSets(descriptor_sets, bindings.find(SCENE_DEPTH_BUFFER_STORAGE)->second);
+        scene_depth_buffer_->updateDescriptorSets(scene_descriptors, bindings.find(SCENE_DEPTH_BUFFER_STORAGE)->second);
+    }
+
+    if (shadows_enabled_) {
+        const auto& shadow_bindings = metadata.set_bindings.find(SHADOW_MAP_SET_ID)->second;
+        first = descriptor_sets.begin() + backend_->getSwapChainSize();
+        last = descriptor_sets.end();
+        auto shadow_descriptors = std::vector<VkDescriptorSet>(first, last);
+        backend_->updateDescriptorSets(shadow_map_data_buffer_, shadow_descriptors, shadow_bindings.find(SHADOW_MAP_PROJ_NAME)->second);
+        shadow_map_->updateDescriptorSets(shadow_descriptors, shadow_bindings.find(SHADOW_MAP_NAME)->second);
     }
 }
 
@@ -578,13 +598,13 @@ void SceneManager::updateGemetryDescriptorSets(const DescriptorSetMetadata& meta
     }
 }
 
-void SceneManager::drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index) {
+void SceneManager::drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index, bool with_material) {
     VkDeviceSize offsets[] = { 0 };
     vkCmdBindVertexBuffers(cmd_buffer, 0, 1, &scene_vertex_buffer_.vk_buffer, offsets);
     vkCmdBindIndexBuffer(cmd_buffer, scene_index_buffer_.vk_buffer, 0, VK_INDEX_TYPE_UINT32);
 
     for (auto& mesh : meshes_) {
-        mesh->drawGeometry(cmd_buffer, pipeline_layout, swapchain_index);
+        mesh->drawGeometry(cmd_buffer, pipeline_layout, swapchain_index, with_material);
     }
 }
 
@@ -623,72 +643,37 @@ glm::mat4 SceneManager::lookAtMatrix() const {
     return glm::inverse(camera_transform_);
 }
 
-glm::mat4 SceneManager::lightViewMatrix() const {
-    glm::vec3 light_forward = glm::vec3(0.0f, 0.0f, -1.0f);
-    glm::vec3 right = glm::normalize(glm::cross(light_forward, glm::vec3(0.0f, 0.0f, 1.0f)));
-    glm::vec3 up = glm::cross(right, light_forward);
-
-    // rotation
-    glm::mat4 light_transform(1.0f);
-    light_transform[0][0] = light_forward[0];
-    light_transform[1][0] = right[0];
-    light_transform[2][0] = up[0];
-    light_transform[0][1] = light_forward[1];
-    light_transform[1][1] = right[1];
-    light_transform[2][1] = up[1];
-    light_transform[0][2] = light_forward[2];
-    light_transform[1][2] = right[2];
-    light_transform[2][2] = up[2];
-
-    // translation
-    light_transform[3][0] = scene_data_.light_position[0];
-    light_transform[3][1] = scene_data_.light_position[1];
-    light_transform[3][2] = scene_data_.light_position[2];
-
-    // scale
-    light_transform[0][3] = 0.0f;
-    light_transform[1][3] = 0.0f;
-    light_transform[2][3] = 0.0f;
-    light_transform[3][3] = 1.0f;
+glm::mat4 SceneManager::lightViewMatrix(const glm::vec3& light_pos, const glm::vec3& light_euler) const {
+    glm::vec3 light_euler_rad = glm::radians(light_euler);
+    glm::quat light_orientation(light_euler_rad);
+    glm::mat3 light_rot = glm::mat3(light_orientation);
+    
+    glm::mat4 light_transform(light_rot);
+    light_transform = glm::translate(light_transform, light_pos);
 
     return glm::inverse(light_transform);
 }
 
-glm::mat4 SceneManager::shadowMapProjection(bool premultiply_bias) const {
+glm::mat4 SceneManager::shadowMapProjection() const {
     float ar = shadow_map_width_ / (float)shadow_map_height_;
-    auto proj = glm::perspective(glm::radians(100.0f), ar, 0.1f, 1000.0f);
-
-    if (premultiply_bias) {
-        glm::mat4 bias( 
-            0.5f, 0.0f, 0.0f, 0.0f, 
-            0.0f, 0.5f, 0.0f, 0.0f,
-            0.0f, 0.0f, 1.0f, 0.0f,
-            0.5f, 0.5f, 0.0f, 1.0f
-        );
-        return bias * proj;
-    }
-
-    return proj;
+    return glm::perspective(glm::radians(120.0f), ar, 0.1f, 1000.0f);
 }
 
-void SceneManager::setupShadowMapAssets() {
-    shadow_map_data_.light_view = lightViewMatrix();
+void SceneManager::setupShadowMapAssets(const glm::vec3& light_pos, const glm::vec3& light_euler) {
+    shadow_map_data_.light_view = lightViewMatrix(light_pos, light_euler);
     shadow_map_data_.shadow_proj = shadowMapProjection();
 
-    glm::mat4 bias_proj = shadowMapProjection(true);
-    shadow_map_proj_.view_proj_bias = bias_proj * shadow_map_data_.light_view;
-
-    shadow_map_data_buffer_ = backend_->createUniformBuffer<ShadowMapData>("shadow_map_data", 1);
-    backend_->updateBuffer<ShadowMapData>(shadow_map_data_buffer_.buffers[0], { shadow_map_data_ });
-
-    shadow_map_proj_buffer_ = backend_->createUniformBuffer<ShadowMapProj>("shadow_map_proj_data", 1);
-    backend_->updateBuffer<ShadowMapProj>(shadow_map_proj_buffer_.buffers[0], { shadow_map_proj_ });
+    shadow_map_data_buffer_ = backend_->createUniformBuffer<ShadowMapData>("shadow_map_data", backend_->getSwapChainSize());
+    for (size_t i = 0; i < backend_->getSwapChainSize(); i++) {
+       backend_->updateBuffer<ShadowMapData>(shadow_map_data_buffer_.buffers[i], { shadow_map_data_ });
+    }
 
     shadow_map_ = backend_->createTexture("shadow_map");
     shadow_map_->createDepthOnlyAttachment(shadow_map_width_, shadow_map_height_, true);
     
     RenderPassConfig render_pass_config;
 	render_pass_config.name = "Shadow Map Pass";
+    render_pass_config.framebuffer_size = {2048, 2048};
     render_pass_config.offscreen = true;
     render_pass_config.has_colour = false;
     render_pass_config.has_depth = true;
@@ -758,22 +743,13 @@ void SceneManager::createShadowMapDescriptors() {
     vk_shadow_descriptor_sets_.push_back(layout_descriptor_set);
 
     const auto& bindings = shadow_map_pipeline_.descriptor_metadata.set_bindings.find(SHADOW_MAP_DATA_UNIFORM_SET_ID)->second;
-    backend_->updateDescriptorSets(scene_data_buffer_, vk_shadow_descriptor_sets_, bindings.find(SHADOW_MAP_DATA_BINDING_NAME)->second);
+    backend_->updateDescriptorSets(shadow_map_data_buffer_, vk_shadow_descriptor_sets_, bindings.find(SHADOW_MAP_DATA_BINDING_NAME)->second);
 }
 
 void SceneManager::updateShadowMap() {
     createShadowMapDescriptors();
 
     auto cmd_buffer = backend_->beginSingleTimeCommands();
-
-    VkCommandBufferBeginInfo begin_info{};
-	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	begin_info.pInheritanceInfo = nullptr;
-
-	if (vkBeginCommandBuffer(cmd_buffer, &begin_info) != VK_SUCCESS) {
-		std::cerr << "Failed to begin recording command buffer!" << std::endl;
-	}
 
     VkRenderPassBeginInfo render_pass_info{};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -793,12 +769,9 @@ void SceneManager::updateShadowMap() {
 
 	vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_map_pipeline_.vk_pipeline_layout, SHADOW_MAP_DATA_UNIFORM_SET_ID, 1, &vk_shadow_descriptor_sets_[0], 0, nullptr);
 
-	drawGeometry(cmd_buffer, shadow_map_pipeline_.vk_pipeline_layout, 0); //
+	drawGeometry(cmd_buffer, shadow_map_pipeline_.vk_pipeline_layout, 0, false /*no material*/);
 
     vkCmdEndRenderPass(cmd_buffer);
-	if (vkEndCommandBuffer(cmd_buffer) != VK_SUCCESS) {
-		std::cerr << "Failed to record command buffer!" << std::endl;
-	}
-	
+
     backend_->endSingleTimeCommands(cmd_buffer);
 }
