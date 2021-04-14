@@ -37,7 +37,7 @@ public:
 	void setLightPosition(const glm::vec3& pos);
 	void setLightColour(const glm::vec4& colour, float intensity = 1.0f);
 	void setAmbientColour(const glm::vec4& colour, float intensity = 1.0f);
-	void enableShadows(const glm::vec3& light_pos, const glm::vec3& light_euler);   // pitch, yaw, roll
+	void enableShadows();
 	
 	const SceneData& getSceneData() const { return scene_data_; }
 
@@ -64,9 +64,9 @@ public:
 private:
 	void updateCameraTransform();
 	glm::mat4 lookAtMatrix() const;
-	glm::mat4 lightViewMatrix(const glm::vec3& light_pos, const glm::vec3& light_euler) const;
+	glm::mat4 lightViewMatrix() const;
 	glm::mat4 shadowMapProjection() const;
-	void setupShadowMapAssets(const glm::vec3& light_pos, const glm::vec3& light_euler);
+	void setupShadowMapAssets();
 	void createShadowMapDescriptors();
 
 	VulkanBackend* backend_;

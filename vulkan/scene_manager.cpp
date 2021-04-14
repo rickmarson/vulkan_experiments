@@ -401,8 +401,8 @@ void SceneManager::setAmbientColour(const glm::vec4& colour, float intensity) {
     scene_data_.ambient_intensity = colour * intensity;
 }
 
-void SceneManager::enableShadows(const glm::vec3& light_pos, const glm::vec3& light_euler) {
-    setupShadowMapAssets(light_pos, light_euler);
+void SceneManager::enableShadows() {
+    setupShadowMapAssets();
     shadows_enabled_ = true;
 }
 
@@ -608,59 +608,72 @@ void SceneManager::drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pi
     }
 }
 
+namespace {
+    glm::mat4 calcWorldTransform(const glm::vec3& position, glm::vec3 target = glm::vec3(0.f), glm::vec3 up_ = glm::vec3(0.f, 0.f, 1.f), bool follow_target = false) {
+        glm::vec3 forward;
+        if (follow_target) {
+            forward = glm::normalize(target - position);
+        } else {
+            forward = glm::normalize(target); // interpret target as the forward vector
+        }
+
+        glm::vec3 right = glm::normalize(glm::cross(forward, up_));
+        glm::vec3 up = glm::cross(right, forward);
+        
+        glm::mat4 world_tranform(1.f);
+        // rotation
+        world_tranform[0][0] = forward[0];
+        world_tranform[1][0] = right[0];
+        world_tranform[2][0] = up[0];
+        world_tranform[0][1] = forward[1];
+        world_tranform[1][1] = right[1];
+        world_tranform[2][1] = up[1];
+        world_tranform[0][2] = forward[2];
+        world_tranform[1][2] = right[2];
+        world_tranform[2][2] = up[2];
+
+        // translation
+        world_tranform[3][0] = position[0];
+        world_tranform[3][1] = position[1];
+        world_tranform[3][2] = position[2];
+
+        // scale
+        world_tranform[0][3] = 0.0f;
+        world_tranform[1][3] = 0.0f;
+        world_tranform[2][3] = 0.0f;
+        world_tranform[3][3] = 1.0f;
+
+        return world_tranform;
+    }
+}
+
 void SceneManager::updateCameraTransform() {    
     if (follow_target_) {
         camera_forward_ = glm::normalize(camera_look_at_ - camera_position_);
     }
 
-    glm::vec3 right = glm::normalize(glm::cross(camera_forward_, camera_up_));
-    glm::vec3 up = glm::cross(right, camera_forward_);
-
-    // rotation
-    camera_transform_[0][0] = camera_forward_[0];
-    camera_transform_[1][0] = right[0];
-    camera_transform_[2][0] = up[0];
-    camera_transform_[0][1] = camera_forward_[1];
-    camera_transform_[1][1] = right[1];
-    camera_transform_[2][1] = up[1];
-    camera_transform_[0][2] = camera_forward_[2];
-    camera_transform_[1][2] = right[2];
-    camera_transform_[2][2] = up[2];
-
-    // translation
-    camera_transform_[3][0] = camera_position_[0];
-    camera_transform_[3][1] = camera_position_[1];
-    camera_transform_[3][2] = camera_position_[2];
-
-    // scale
-    camera_transform_[0][3] = 0.0f;
-    camera_transform_[1][3] = 0.0f;
-    camera_transform_[2][3] = 0.0f;
-    camera_transform_[3][3] = 1.0f;
+    camera_transform_ = calcWorldTransform(camera_position_, camera_forward_, camera_up_);
 }
 
 glm::mat4 SceneManager::lookAtMatrix() const {
     return glm::inverse(camera_transform_);
 }
 
-glm::mat4 SceneManager::lightViewMatrix(const glm::vec3& light_pos, const glm::vec3& light_euler) const {
-    glm::vec3 light_euler_rad = glm::radians(light_euler);
-    glm::quat light_orientation(light_euler_rad);
-    glm::mat3 light_rot = glm::mat3(light_orientation);
-    
-    glm::mat4 light_transform(light_rot);
-    light_transform = glm::translate(light_transform, light_pos);
-
+glm::mat4 SceneManager::lightViewMatrix() const {
+    glm::vec3 world_light_position = scene_data_.light_position * gltf_scale_factor_;
+    glm::vec3 shadow_source_position = glm::normalize(world_light_position);
+    shadow_source_position *= glm::length(world_light_position) * 2.f;
+    glm::mat4 light_transform = calcWorldTransform(shadow_source_position, glm::vec3(0.f), glm::vec3(0.01f, 0.f, 0.99f), true);
     return glm::inverse(light_transform);
 }
 
 glm::mat4 SceneManager::shadowMapProjection() const {
-    float ar = shadow_map_width_ / (float)shadow_map_height_;
-    return glm::perspective(glm::radians(120.0f), ar, 0.1f, 1000.0f);
+    const float ar = shadow_map_width_ / (float)shadow_map_height_;
+    return glm::perspective(glm::radians(100.0f), ar, 0.1f, 20.0f);
 }
 
-void SceneManager::setupShadowMapAssets(const glm::vec3& light_pos, const glm::vec3& light_euler) {
-    shadow_map_data_.light_view = lightViewMatrix(light_pos, light_euler);
+void SceneManager::setupShadowMapAssets() {
+    shadow_map_data_.light_view = lightViewMatrix();
     shadow_map_data_.shadow_proj = shadowMapProjection();
 
     shadow_map_data_buffer_ = backend_->createUniformBuffer<ShadowMapData>("shadow_map_data", backend_->getSwapChainSize());
@@ -673,7 +686,7 @@ void SceneManager::setupShadowMapAssets(const glm::vec3& light_pos, const glm::v
     
     RenderPassConfig render_pass_config;
 	render_pass_config.name = "Shadow Map Pass";
-    render_pass_config.framebuffer_size = {2048, 2048};
+    render_pass_config.framebuffer_size = {shadow_map_width_, shadow_map_height_};
     render_pass_config.offscreen = true;
     render_pass_config.has_colour = false;
     render_pass_config.has_depth = true;

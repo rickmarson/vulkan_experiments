@@ -126,7 +126,7 @@ bool RainyAlley::loadAssets() {
 	scene_manager_->setLightPosition(light_pos);
 	scene_manager_->setLightColour(glm::vec4(1.0f, 0.971f, 0.492f, 1.0f), 4.0f);
 	scene_manager_->setAmbientColour(glm::vec4(0.02f));
-	scene_manager_->enableShadows(light_pos, glm::vec3(-90.f, 0.f, 0.f));
+	scene_manager_->enableShadows();
 
 	scene_manager_->loadFromGlb("meshes/alley.glb");
 
