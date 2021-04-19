@@ -266,7 +266,7 @@ void ImGuiRenderer::endFrame() {
 }
 
 
-RecordCommandsResult ImGuiRenderer::recordCommands(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info, const ImGuiProfileConfig& profile_config) {
+RecordCommandsResult ImGuiRenderer::renderFrame(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info, const ImGuiProfileConfig& profile_config) {
     ImDrawData* draw_data = ImGui::GetDrawData();
 
     // we might need to combine multiple command buffers in one frame in the future

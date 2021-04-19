@@ -75,12 +75,14 @@ void StaticMesh::createDescriptorSets(const std::map<uint32_t, VkDescriptorSetLa
     }
 }
 
-void StaticMesh::updateDescriptorSets(const DescriptorSetMetadata& metadata) {
+void StaticMesh::updateDescriptorSets(const DescriptorSetMetadata& metadata, bool with_material) {
     const auto& bindings = metadata.set_bindings.find(MODEL_UNIFORM_SET_ID)->second;
     backend_->updateDescriptorSets(uniform_buffer_, vk_descriptor_sets_, bindings.find(MODEL_DATA_BINDING_NAME)->second);
 
-    for (auto& surface : surfaces_) {
-        surface.updateDescriptorSets(backend_, metadata);
+    if (with_material) {
+        for (auto& surface : surfaces_) {
+            surface.updateDescriptorSets(backend_, metadata);
+        }
     }
 }
 

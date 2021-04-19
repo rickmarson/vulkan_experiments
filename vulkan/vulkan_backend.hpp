@@ -35,8 +35,6 @@ struct RenderPassConfig {
     bool has_colour = true;
     bool has_depth = true;
     bool store_depth = false;
-    std::shared_ptr<Texture> external_colour_attchment; // optional
-    std::shared_ptr<Texture> external_depth_stencil_attchment; // optional
     std::vector<SubpassConfig> subpasses;
 };
 

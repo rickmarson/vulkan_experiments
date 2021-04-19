@@ -66,8 +66,8 @@ vec4 lit_surface() {
 }
 
 float shadow_factor() {
-    if (texture(shadow_map, shadow_tex_coord.xy).r < shadow_tex_coord.z - 0.005) {
-        return 0.2;
+    if (texture(shadow_map, shadow_tex_coord.xy).r < shadow_tex_coord.z - 0.0005) {
+        return 0.35;
     }
     return 1.0;
 }

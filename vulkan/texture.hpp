@@ -22,9 +22,8 @@ public:
     void loadImageRGBA(const std::string& src_image_path, bool genMipMaps = true, bool srgb = false);
     void loadImageRGBA(uint32_t width, uint32_t height, bool genMipMaps, glm::vec4 fill_colour, bool srgb = false);
     void loadImageRGBA(uint32_t width, uint32_t height, uint32_t channels, bool genMipMaps, const std::vector<unsigned char>& pixels, bool srgb = false);
-    void createColourAttachment(uint32_t width, uint32_t height, VkFormat format, VkSampleCountFlagBits num_samples);
-    void createDepthStencilAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits num_samples);
-    void createDepthOnlyAttachment(uint32_t width, uint32_t height, bool enable_sampling = false, VkSampleCountFlagBits num_samples = VK_SAMPLE_COUNT_1_BIT);
+    void createColourAttachment(uint32_t width, uint32_t height, VkFormat format, VkSampleCountFlagBits num_samples, bool enable_sampling = false);
+    void createDepthStencilAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits num_samples, bool enable_sampling = false);
     void createDepthStorageImage(uint32_t width, uint32_t height, bool as_rgba32 = false);
     bool isValid() const { return vk_image_ != VK_NULL_HANDLE && vk_memory_ != VK_NULL_HANDLE && vk_image_view_ != VK_NULL_HANDLE; }
 
@@ -33,12 +32,14 @@ public:
     
     // used for descriptor sets that have one binding point dedicates to one texture
     void updateDescriptorSets(std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding_point);
+    void updateImageLayout(VkImageLayout new_layout) { vk_layout_ = new_layout; }
 
     VkFormat getFormat() const { return vk_format_; }
     VkImage getImage() const { return vk_image_; }
     VkImageView getImageView() const { return vk_image_view_; }
     VkImageLayout getImageLayout() const { return vk_layout_; }
     VkSampler getImageSampler() const { return vk_sampler_; }
+    VkImageView getSamplerImageView() const;
 
 private:
     bool createImage();
@@ -67,5 +68,6 @@ private:
     VkSampleCountFlagBits vk_num_samples_ = VK_SAMPLE_COUNT_1_BIT;
     VkDeviceMemory vk_memory_ = VK_NULL_HANDLE;
     VkImageView vk_image_view_ = VK_NULL_HANDLE;
+    VkImageView vk_sampler_image_view_ = VK_NULL_HANDLE;
     VkSampler vk_sampler_ = VK_NULL_HANDLE;
 };

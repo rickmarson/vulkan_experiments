@@ -39,7 +39,7 @@ public:
 
 	void beginFrame();
 	void endFrame();
-	RecordCommandsResult recordCommands(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info, const ImGuiProfileConfig& profile_config);
+	RecordCommandsResult renderFrame(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info, const ImGuiProfileConfig& profile_config);
 
 private:
 	void InitImGui(GLFWWindowHandle window);

@@ -256,7 +256,6 @@ SceneManager::~SceneManager() {
         backend_->destroyRenderPass(shadow_map_render_pass_);
 	    backend_->destroyPipeline(shadow_map_pipeline_);
         backend_->destroyUniformBuffer(shadow_map_data_buffer_);
-        shadow_map_.reset();
     }
     vk_descriptor_sets_.clear();
 }
@@ -402,7 +401,6 @@ void SceneManager::setAmbientColour(const glm::vec4& colour, float intensity) {
 }
 
 void SceneManager::enableShadows() {
-    setupShadowMapAssets();
     shadows_enabled_ = true;
 }
 
@@ -571,7 +569,7 @@ void SceneManager::updateDescriptorSets(const std::string& pipeline_name, const 
         last = descriptor_sets.end();
         auto shadow_descriptors = std::vector<VkDescriptorSet>(first, last);
         backend_->updateDescriptorSets(shadow_map_data_buffer_, shadow_descriptors, shadow_bindings.find(SHADOW_MAP_PROJ_NAME)->second);
-        shadow_map_->updateDescriptorSets(shadow_descriptors, shadow_bindings.find(SHADOW_MAP_NAME)->second);
+        shadow_map_render_pass_.depth_attachment->updateDescriptorSets(shadow_descriptors, shadow_bindings.find(SHADOW_MAP_NAME)->second);
     }
 }
 
@@ -592,9 +590,21 @@ void SceneManager::createGeometryDescriptorSets(const std::map<uint32_t, VkDescr
     }
 }
 
-void SceneManager::updateGemetryDescriptorSets(const DescriptorSetMetadata& metadata) {
+void SceneManager::updateGeometryDescriptorSets(const DescriptorSetMetadata& metadata, bool with_material) {
     for (auto& mesh : meshes_) {
-        mesh->updateDescriptorSets(metadata);
+        mesh->updateDescriptorSets(metadata, with_material);
+    }
+}
+
+void SceneManager::bindSceneDescriptors(VkCommandBuffer& cmd_buffer, const Pipeline& pipeline, uint32_t swapchain_index) {
+    auto& descriptors = getDescriptorSets(pipeline.name);
+    uint32_t scene_data_offset = swapchain_index;
+	// scene data
+	vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &descriptors[scene_data_offset], 0, nullptr);
+	if (shadows_enabled_) {
+        // shadow map data
+        uint32_t shadow_map_offset = backend_->getSwapChainSize() + scene_data_offset;
+	    vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.vk_pipeline_layout, SHADOW_MAP_SET_ID, 1, &descriptors[shadow_map_offset], 0, nullptr);
     }
 }
 
@@ -661,15 +671,13 @@ glm::mat4 SceneManager::lookAtMatrix() const {
 
 glm::mat4 SceneManager::lightViewMatrix() const {
     glm::vec3 world_light_position = scene_data_.light_position * gltf_scale_factor_;
-    glm::vec3 shadow_source_position = glm::normalize(world_light_position);
-    shadow_source_position *= glm::length(world_light_position) * 2.f;
-    glm::mat4 light_transform = calcWorldTransform(shadow_source_position, glm::vec3(0.f), glm::vec3(0.01f, 0.f, 0.99f), true);
+    glm::mat4 light_transform = calcWorldTransform(world_light_position, glm::vec3(0.f), glm::vec3(0.01f, 0.f, 0.99f), true);
     return glm::inverse(light_transform);
 }
 
 glm::mat4 SceneManager::shadowMapProjection() const {
     const float ar = shadow_map_width_ / (float)shadow_map_height_;
-    return glm::perspective(glm::radians(100.0f), ar, 0.1f, 20.0f);
+    return glm::perspective(glm::radians(120.0f), ar, 0.1f, 1000.0f);
 }
 
 void SceneManager::setupShadowMapAssets() {
@@ -681,9 +689,6 @@ void SceneManager::setupShadowMapAssets() {
        backend_->updateBuffer<ShadowMapData>(shadow_map_data_buffer_.buffers[i], { shadow_map_data_ });
     }
 
-    shadow_map_ = backend_->createTexture("shadow_map");
-    shadow_map_->createDepthOnlyAttachment(shadow_map_width_, shadow_map_height_, true);
-    
     RenderPassConfig render_pass_config;
 	render_pass_config.name = "Shadow Map Pass";
     render_pass_config.framebuffer_size = {shadow_map_width_, shadow_map_height_};
@@ -691,7 +696,6 @@ void SceneManager::setupShadowMapAssets() {
     render_pass_config.has_colour = false;
     render_pass_config.has_depth = true;
 	render_pass_config.store_depth = true;
-    render_pass_config.external_depth_stencil_attchment = shadow_map_;
 	
 	SubpassConfig subpass;
 	subpass.use_colour_attachment = false;
@@ -754,13 +758,17 @@ void SceneManager::createShadowMapDescriptors() {
     }
 
     vk_shadow_descriptor_sets_.push_back(layout_descriptor_set);
+}
+
+void SceneManager::renderStaticShadowMap() {
+    setupShadowMapAssets();
+    createShadowMapDescriptors();
+
+    update();  // needed to load all the mesh uniforms
 
     const auto& bindings = shadow_map_pipeline_.descriptor_metadata.set_bindings.find(SHADOW_MAP_DATA_UNIFORM_SET_ID)->second;
     backend_->updateDescriptorSets(shadow_map_data_buffer_, vk_shadow_descriptor_sets_, bindings.find(SHADOW_MAP_DATA_BINDING_NAME)->second);
-}
-
-void SceneManager::updateShadowMap() {
-    createShadowMapDescriptors();
+    updateGeometryDescriptorSets(shadow_map_pipeline_.descriptor_metadata, false /*no material*/);
 
     auto cmd_buffer = backend_->beginSingleTimeCommands();
 

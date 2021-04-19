@@ -25,13 +25,14 @@ private:
 	virtual bool loadAssets() final;
 	virtual bool setupScene() final;
 	virtual bool createGraphicsPipeline() final;
-	virtual RecordCommandsResult recordCommands(uint32_t swapchain_image) final;
+	virtual RecordCommandsResult renderFrame(uint32_t swapchain_image) final;
 	virtual void updateScene() final;
 	virtual void cleanupSwapChainAssets() final;
 	virtual void cleanup() final;
 
 	bool createAlleyGraphicsPipeline();
 	bool createRainDropsPipeline();
+	void updateDescriptorSets();
 	void drawUi();
 
 	std::unique_ptr<ImGuiRenderer> imgui_renderer_;
@@ -201,8 +202,9 @@ bool RainyAlley::setupScene() {
 		return false;
 	}
 
-	// only need to do this once as both the scene geometry and the light position are static
-	scene_manager_->updateShadowMap();
+	scene_manager_->renderStaticShadowMap();
+
+	updateDescriptorSets();
 
 	drawUi();
 
@@ -280,9 +282,7 @@ bool RainyAlley::createAlleyGraphicsPipeline() {
 
 	scene_manager_->createUniforms();
 	scene_manager_->createGeometryDescriptorSets(alley_graphics_pipeline_.vk_descriptor_set_layouts);
-	scene_manager_->updateGemetryDescriptorSets(alley_graphics_pipeline_.descriptor_metadata);
 	scene_manager_->createDescriptorSets(alley_graphics_pipeline_.name, alley_graphics_pipeline_.vk_descriptor_set_layouts);
-	scene_manager_->updateDescriptorSets(alley_graphics_pipeline_.name, alley_graphics_pipeline_.descriptor_metadata);
 
 	return alley_graphics_pipeline_.vk_pipeline != VK_NULL_HANDLE;
 }
@@ -304,16 +304,21 @@ bool RainyAlley::createRainDropsPipeline() {
 	rain_graphics_pipeline_ = vulkan_backend_.createGraphicsPipeline(config);
 
 	scene_manager_->createDescriptorSets(rain_graphics_pipeline_.name, rain_graphics_pipeline_.vk_descriptor_set_layouts);
-	scene_manager_->updateDescriptorSets(rain_graphics_pipeline_.name, rain_graphics_pipeline_.descriptor_metadata);
 
 	rain_drops_emitter_->createUniformBuffers();
 	rain_drops_emitter_->createGraphicsDescriptorSets(rain_graphics_pipeline_.vk_descriptor_set_layouts);
-	rain_drops_emitter_->updateGraphicsDescriptorSets(rain_graphics_pipeline_.descriptor_metadata);
-
+	
 	return rain_graphics_pipeline_.vk_pipeline != VK_NULL_HANDLE;
 }
 
-RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
+void RainyAlley::updateDescriptorSets() {
+	scene_manager_->updateGeometryDescriptorSets(alley_graphics_pipeline_.descriptor_metadata);
+	scene_manager_->updateDescriptorSets(alley_graphics_pipeline_.name, alley_graphics_pipeline_.descriptor_metadata);
+	scene_manager_->updateDescriptorSets(rain_graphics_pipeline_.name, rain_graphics_pipeline_.descriptor_metadata);
+	rain_drops_emitter_->updateGraphicsDescriptorSets(rain_graphics_pipeline_.descriptor_metadata);
+}
+
+RecordCommandsResult RainyAlley::renderFrame(uint32_t swapchain_image) {
 	auto& main_command_buffer = graphics_command_buffers_[swapchain_image];
 
 	// we might need to combine multiple command buffers in one frame in the future
@@ -347,13 +352,8 @@ RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
 	render_pass_info.pClearValues = clear_values.data();
 
 	vkCmdBeginRenderPass(command_buffers[0], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-
-	VkDeviceSize offsets[] = { 0 };
-	auto& alley_scene_descriptors = scene_manager_->getDescriptorSets(alley_graphics_pipeline_.name);
-	// scene data
-	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, alley_graphics_pipeline_.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &alley_scene_descriptors[swapchain_image], 0, nullptr);
-	// shadow map data
-	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, alley_graphics_pipeline_.vk_pipeline_layout, SHADOW_MAP_SET_ID, 1, &alley_scene_descriptors[vulkan_backend_.getSwapChainSize() + swapchain_image], 0, nullptr);
+	
+	scene_manager_->bindSceneDescriptors(command_buffers[0], alley_graphics_pipeline_, swapchain_image);
 
 	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, alley_graphics_pipeline_.vk_pipeline);
 
@@ -373,6 +373,7 @@ RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
 	auto& particles_descriptors = rain_drops_emitter_->getGraphicsDescriptorSets();
 	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, rain_graphics_pipeline_.vk_pipeline_layout, MODEL_UNIFORM_SET_ID, 1, &particles_descriptors[swapchain_image], 0, nullptr);
 
+	VkDeviceSize offsets[] = { 0 };
 	vkCmdBindVertexBuffers(command_buffers[0], 0, 1, &rain_drops_emitter_->getVertexBuffer().vk_buffer, offsets);
 	
 	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 4); // does nothing if not in debug
@@ -385,7 +386,7 @@ RecordCommandsResult RainyAlley::recordCommands(uint32_t swapchain_image) {
 	vkCmdNextSubpass(command_buffers[0], VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 	
 	ImGuiProfileConfig ui_profile_config = { true, 6, 7 };
-	auto commands = imgui_renderer_->recordCommands(swapchain_image, render_pass_info, ui_profile_config);
+	auto commands = imgui_renderer_->renderFrame(swapchain_image, render_pass_info, ui_profile_config);
 	auto success = std::get<0>(commands);
 
 	if (success) {

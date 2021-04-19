@@ -48,7 +48,7 @@ public:
 	void deleteUniformBuffer();
 	DescriptorPoolConfig getDescriptorsCount() const;
 	void createDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
-	void updateDescriptorSets(const DescriptorSetMetadata& metadata);
+	void updateDescriptorSets(const DescriptorSetMetadata& metadata, bool with_material = true);
 	std::vector<VkDescriptorSet>& getDescriptorSets() { return vk_descriptor_sets_; }
 
 	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index, bool with_material = true);

@@ -366,12 +366,8 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
     VkAttachmentReference color_attachment_ref{};
     if (config.has_colour) {
         // create colour attachment
-        if (!config.external_colour_attchment) {
-            colour_texture = Texture::createTexture(config.name + "_colour_attachment", device_, this);
-            colour_texture->createColourAttachment(extent.width, extent.height, swap_chain_image_format_, config.msaa_samples);
-        } else {
-            colour_texture = config.external_colour_attchment;
-        }
+        colour_texture = Texture::createTexture(config.name + "_colour_attachment", device_, this);
+        colour_texture->createColourAttachment(extent.width, extent.height, swap_chain_image_format_, config.msaa_samples);
 
         VkAttachmentDescription color_attachment{};
         color_attachment.format = swap_chain_image_format_;
@@ -380,13 +376,13 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
         color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        color_attachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        color_attachment.initialLayout = colour_texture->getImageLayout();
+        color_attachment.finalLayout = colour_texture->getImageLayout();
 
         attachments.push_back(color_attachment);
         colour_attachment_idx = 0;
         color_attachment_ref.attachment = colour_attachment_idx;
-        color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        color_attachment_ref.layout = colour_texture->getImageLayout();
     }
     
     std::shared_ptr<Texture> depth_texture;
@@ -394,13 +390,9 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
     VkAttachmentReference depth_attachment_ref{};
     if (config.has_depth) {
         // create depth stencil attachment
-        if (!config.external_depth_stencil_attchment) {
-            depth_texture = Texture::createTexture(config.name + "_depth_attachment", device_, this);
-            depth_texture->createDepthStencilAttachment(extent.width, extent.height, config.msaa_samples);
-        } else {
-            depth_texture = config.external_depth_stencil_attchment;
-        }
-
+        depth_texture = Texture::createTexture(config.name + "_depth_attachment", device_, this);
+        depth_texture->createDepthStencilAttachment(extent.width, extent.height, config.msaa_samples, config.store_depth);
+        
         VkAttachmentDescription depth_attachment{};
         depth_attachment.format = depth_texture->getFormat();
         depth_attachment.samples = config.msaa_samples;
@@ -408,13 +400,17 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
         depth_attachment.storeOp = config.store_depth ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
         depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        depth_attachment.finalLayout = config.store_depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depth_attachment.initialLayout = depth_texture->getImageLayout();
+        depth_attachment.finalLayout = config.store_depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : depth_texture->getImageLayout();
 
         attachments.push_back(depth_attachment);
         depth_attachment_idx = colour_attachment_idx == 0 ? 1 : 0;
         depth_attachment_ref.attachment = depth_attachment_idx;
-        depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depth_attachment_ref.layout = depth_texture->getImageLayout();
+
+        if (config.store_depth) {
+            depth_texture->updateImageLayout(VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+        }
     }
 
     uint32_t resolve_attachment_idx = ~0;
@@ -549,9 +545,23 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
         return RenderPass{};
     }
 
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float)extent.width;
+    viewport.height = (float)extent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.offset = { 0, 0 };
+    scissor.extent = extent;
+
     RenderPass render_pass;
     render_pass.name = config.name;
     render_pass.msaa_samples = config.msaa_samples;
+    render_pass.viewport = viewport;
+    render_pass.scissor = scissor;
     render_pass.vk_render_pass = vk_render_pass;
     render_pass.colour_attachment = std::move(colour_texture);
     render_pass.depth_attachment = std::move(depth_texture);
@@ -679,24 +689,12 @@ Pipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineConfig& con
     input_assembly.topology = config.topology;
     input_assembly.primitiveRestartEnable = VK_FALSE;
 
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = (float)swap_chain_extent_.width;
-    viewport.height = (float)swap_chain_extent_.height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-
-    VkRect2D scissor{};
-    scissor.offset = { 0, 0 };
-    scissor.extent = swap_chain_extent_;
-
     VkPipelineViewportStateCreateInfo viewport_state{};
     viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewport_state.viewportCount = 1;
-    viewport_state.pViewports = &viewport;
+    viewport_state.pViewports = &config.render_pass.viewport;
     viewport_state.scissorCount = 1;
-    viewport_state.pScissors = &scissor;
+    viewport_state.pScissors = &config.render_pass.scissor;
 
     VkPipelineRasterizationStateCreateInfo rasterizer{};
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -1235,9 +1233,15 @@ bool VulkanBackend::createLogicalDevice() {
     device_features.sampleRateShading = VK_TRUE;
     device_features.geometryShader = VK_TRUE;
     device_features.fragmentStoresAndAtomics = VK_TRUE;
+    
+    /*VkPhysicalDeviceSeparateDepthStencilLayoutsFeatures additional_features{};
+    additional_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES;
+    additional_features.pNext = nullptr;
+    additional_features.separateDepthStencilLayouts = true;*/
 
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    create_info.pNext = nullptr;
     create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size());
     create_info.pQueueCreateInfos = queue_create_infos.data();
     create_info.pEnabledFeatures = &device_features;

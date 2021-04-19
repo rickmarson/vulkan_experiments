@@ -25,7 +25,7 @@ private:
 	virtual bool loadAssets() final;
 	virtual bool setupScene() final;
 	virtual bool createGraphicsPipeline() final;
-	virtual RecordCommandsResult recordCommands(uint32_t swapchain_image) final;
+	virtual RecordCommandsResult renderFrame(uint32_t swapchain_image) final;
 	virtual void updateScene() final;
 	virtual void cleanupSwapChainAssets() final;
 	virtual void cleanup() final;
@@ -218,7 +218,7 @@ bool ModelViewer::createGraphicsPipeline() {
 
 	scene_manager_->createUniforms();
 	scene_manager_->createGeometryDescriptorSets(graphics_pipeline_.vk_descriptor_set_layouts);
-	scene_manager_->updateGemetryDescriptorSets(graphics_pipeline_.descriptor_metadata);
+	scene_manager_->updateGeometryDescriptorSets(graphics_pipeline_.descriptor_metadata);
 	
 	scene_manager_->createDescriptorSets(graphics_pipeline_.name, graphics_pipeline_.vk_descriptor_set_layouts);
 	scene_manager_->updateDescriptorSets(graphics_pipeline_.name, graphics_pipeline_.descriptor_metadata);
@@ -226,7 +226,7 @@ bool ModelViewer::createGraphicsPipeline() {
 	return graphics_pipeline_.vk_pipeline != VK_NULL_HANDLE;
 }
 
-RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
+RecordCommandsResult ModelViewer::renderFrame(uint32_t swapchain_image) {
 	auto& main_command_buffer = main_command_buffers_[swapchain_image];
 
 	// might need to combine multiple command buffers in one frame in the future
@@ -262,11 +262,8 @@ RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
 	vkCmdBeginRenderPass(command_buffers[0], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline);
 
-	VkDeviceSize offsets[] = { 0 };
-	auto& scene_descriptors = scene_manager_->getDescriptorSets(graphics_pipeline_.name);
-
-	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &scene_descriptors[swapchain_image], 0, nullptr);
-
+	scene_manager_->bindSceneDescriptors(command_buffers[0], graphics_pipeline_, swapchain_image);
+	
 	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0); // does nothing if not in debug
 
 	scene_manager_->drawGeometry(command_buffers[0], graphics_pipeline_.vk_pipeline_layout, swapchain_image);
@@ -277,7 +274,7 @@ RecordCommandsResult ModelViewer::recordCommands(uint32_t swapchain_image) {
 	vkCmdNextSubpass(command_buffers[0], VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 	
 	ImGuiProfileConfig ui_profile_config = { true, 2, 3 };
-	auto commands = imgui_renderer_->recordCommands(swapchain_image, render_pass_info, ui_profile_config);
+	auto commands = imgui_renderer_->renderFrame(swapchain_image, render_pass_info, ui_profile_config);
 	auto success = std::get<0>(commands);
 
 	if (success) {

@@ -145,7 +145,7 @@ void VulkanApp::drawFrame() {
         return;
     }
 
-    auto commands = recordCommands(next_swapchain_image);
+    auto commands = renderFrame(next_swapchain_image);
     auto success = std::get<0>(commands);
 
     if (success) {

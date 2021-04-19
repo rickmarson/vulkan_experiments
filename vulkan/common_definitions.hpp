@@ -98,6 +98,8 @@ struct SwapChainSupportDetails {
 struct RenderPass {
     std::string name;
     VkSampleCountFlagBits msaa_samples = VK_SAMPLE_COUNT_1_BIT;
+    VkViewport viewport = {0, 0, 0, 0, 0, 1};
+    VkRect2D scissor = {0, 0};
     VkRenderPass vk_render_pass = VK_NULL_HANDLE;
 
     std::shared_ptr<Texture> colour_attachment;

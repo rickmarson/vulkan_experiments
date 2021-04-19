@@ -54,12 +54,13 @@ public:
 	void createDescriptorSets(const std::string& pipeline_name, const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
 	void updateDescriptorSets(const std::string& pipeline_name, const DescriptorSetMetadata& metadata);
 	void createGeometryDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
-	void updateGemetryDescriptorSets(const DescriptorSetMetadata& metadata);
+	void updateGeometryDescriptorSets(const DescriptorSetMetadata& metadata, bool with_material = true);
 	std::vector<VkDescriptorSet>& getDescriptorSets(const std::string& pipeline_name);
 	std::shared_ptr<Texture>& getSceneDepthBuffer() { return scene_depth_buffer_; }
 
+	void bindSceneDescriptors(VkCommandBuffer& cmd_buffer, const Pipeline& pipeline, uint32_t swapchain_index);  // these can be shared across multiple pipelines that need scene-level data
 	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index, bool with_material = true);
-	void updateShadowMap();
+	void renderStaticShadowMap();
 
 private:
 	void updateCameraTransform();
@@ -96,6 +97,5 @@ private:
 	Pipeline shadow_map_pipeline_;
 	ShadowMapData shadow_map_data_;
 	UniformBuffer shadow_map_data_buffer_;
-	std::shared_ptr<Texture> shadow_map_;
 	std::vector<VkDescriptorSet> vk_shadow_descriptor_sets_;
 };

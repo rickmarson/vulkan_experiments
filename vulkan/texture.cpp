@@ -150,7 +150,7 @@ void Texture::loadImageRGBA(uint32_t width, uint32_t height, uint32_t channels, 
     vkFreeMemory(device_, staging_buffer.vk_buffer_memory, nullptr);
 }
 
-void Texture::createColourAttachment(uint32_t width, uint32_t height, VkFormat format, VkSampleCountFlagBits num_samples) {
+void Texture::createColourAttachment(uint32_t width, uint32_t height, VkFormat format, VkSampleCountFlagBits num_samples, bool enable_sampling) {
     if (!isFormatSupported(backend_->getPhysicalDevice(),
         format,
         VK_IMAGE_TILING_OPTIMAL,
@@ -184,9 +184,14 @@ void Texture::createColourAttachment(uint32_t width, uint32_t height, VkFormat f
         vkFreeMemory(device_, vk_memory_, nullptr);
     }
 
+    transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+    if (enable_sampling) {
+        createSampler();
+    }
 }
 
-void Texture::createDepthStencilAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits num_samples) {
+void Texture::createDepthStencilAttachment(uint32_t width, uint32_t height, VkSampleCountFlagBits num_samples, bool enable_sampling) {
     if (!isFormatSupported(backend_->getPhysicalDevice(),
         VK_FORMAT_D24_UNORM_S8_UINT,
         VK_IMAGE_TILING_OPTIMAL,
@@ -196,12 +201,17 @@ void Texture::createDepthStencilAttachment(uint32_t width, uint32_t height, VkSa
         return;
     }
 
+    VkImageUsageFlags usage_flags = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    if (enable_sampling) {
+     usage_flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    }
+
     width_ = width;
     height_ = height;
     channels_ = 1;
     mip_levels_ = 1;
     vk_format_ = VK_FORMAT_D24_UNORM_S8_UINT;
-    vk_usage_flags_ = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    vk_usage_flags_ = usage_flags;
     vk_tiling_ = VK_IMAGE_TILING_OPTIMAL;
     vk_mem_props_ = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     vk_num_samples_ = num_samples;
@@ -221,49 +231,18 @@ void Texture::createDepthStencilAttachment(uint32_t width, uint32_t height, VkSa
     }
 
     transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-}
 
-void Texture::createDepthOnlyAttachment(uint32_t width, uint32_t height, bool enable_sampling, VkSampleCountFlagBits num_samples) {
-    if (!isFormatSupported(backend_->getPhysicalDevice(),
-        VK_FORMAT_D16_UNORM,
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
-        std::cerr << "Error creating depth attachment image" << std::endl;
-        std::cerr << "VK_FORMAT_D24_UNORM_S8_UINT texture format is not supported on the selected device!" << std::endl;
-        return;
-    }
-
-    width_ = width;
-    height_ = height;
-    channels_ = 1;
-    mip_levels_ = 1;
-    vk_format_ = VK_FORMAT_D16_UNORM;
-    vk_usage_flags_ = enable_sampling ? (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    vk_tiling_ = VK_IMAGE_TILING_OPTIMAL;
-    vk_mem_props_ = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    vk_num_samples_ = num_samples;
-
-    if (!createImage()) {
-        if (vk_image_ != VK_NULL_HANDLE) {
-            vkDestroyImage(device_, vk_image_, nullptr);
-        }
-        return;
-    }
-
-    vk_image_view_ = backend_->createImageView(vk_image_, vk_format_, VK_IMAGE_ASPECT_DEPTH_BIT);
-
-    if (vk_image_view_ == VK_NULL_HANDLE) {
-        vkDestroyImage(device_, vk_image_, nullptr);
-        vkFreeMemory(device_, vk_memory_, nullptr);
-    }
-     
-    VkImageLayout layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     if (enable_sampling) {
         createSampler();
-        layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    }
 
-    transitionImageLayout(vk_image_, vk_format_, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED, layout);
+        vk_sampler_image_view_ = backend_->createImageView(vk_image_, vk_format_, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+        if (vk_sampler_image_view_ == VK_NULL_HANDLE) {
+            vkDestroyImageView(device_, vk_image_view_, nullptr);
+            vkDestroyImage(device_, vk_image_, nullptr);
+            vkFreeMemory(device_, vk_memory_, nullptr);   
+        }
+    }
 }
 
 void Texture::createDepthStorageImage(uint32_t width, uint32_t height, bool as_rgba32) {
@@ -315,6 +294,13 @@ void Texture::createDepthStorageImage(uint32_t width, uint32_t height, bool as_r
     range.levelCount = 1;
     vkCmdClearColorImage(cmd_buffer, vk_image_, VK_IMAGE_LAYOUT_GENERAL, &clear_colour, 1, &range);
     backend_->endSingleTimeCommands(cmd_buffer);
+}
+
+VkImageView Texture::getSamplerImageView() const {
+    if (vk_sampler_image_view_ != VK_NULL_HANDLE) {
+        return vk_sampler_image_view_;
+    }
+    return vk_image_view_;
 }
 
 bool Texture::createImage() {
@@ -383,6 +369,13 @@ void Texture::transitionImageLayout(VkImage image, VkFormat format, VkImageAspec
         src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     }
+    else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+        src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    }
     else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -390,9 +383,14 @@ void Texture::transitionImageLayout(VkImage image, VkFormat format, VkImageAspec
         src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
         dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     }
-    else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && (
-             new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL || new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
-            ) {
+    else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+        src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    }
+    else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
@@ -571,10 +569,17 @@ void Texture::createSampler() {
 }
 
 void Texture::updateDescriptorSets(std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding_point) {
+    VkImageView image_view;
+    if (vk_sampler_ != VK_NULL_HANDLE && vk_sampler_image_view_ != VK_NULL_HANDLE) {
+        image_view = vk_sampler_image_view_;
+    } else {
+        image_view = vk_image_view_;
+    }
+
     for (size_t i = 0; i < descriptor_sets.size(); i++) {
         VkDescriptorImageInfo image_info{};
         image_info.imageLayout = vk_layout_;
-        image_info.imageView = vk_image_view_;
+        image_info.imageView = image_view;
         image_info.sampler = vk_sampler_;
 
         VkWriteDescriptorSet descriptor_write{};
