@@ -1,4 +1,4 @@
-VERSION=1.0.0
+VERSION=1.1.0
 TAG=nevil82/vulkan_experiments:${VERSION}
 
 build:

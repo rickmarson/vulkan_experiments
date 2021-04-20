@@ -8,7 +8,7 @@ RUN apt-get update \
   && apt-get install -y build-essential git unzip curl wget cmake
 
 RUN wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add - \
-  && wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.2.148-focal.list https://packages.lunarg.com/vulkan/1.2.148/lunarg-vulkan-1.2.148-focal.list
+  && wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.2.170-focal.list https://packages.lunarg.com/vulkan/1.2.170/lunarg-vulkan-1.2.170-focal.list
 
 RUN apt-get update \
   && apt-get install -y \
