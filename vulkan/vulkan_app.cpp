@@ -134,6 +134,14 @@ bool VulkanApp::recreateSwapChain() {
 }
 
 void VulkanApp::drawFrame() {
+    if (force_recreate_swapchain_) {
+        if (!recreateSwapChain()) {
+            std::cerr << "Failed to re-create swap chain!" << std::endl;
+        }
+        force_recreate_swapchain_ = false;
+        return;
+    }
+
     uint32_t next_swapchain_image = 0;
     VkResult result = vulkan_backend_.startNextFrame(next_swapchain_image, window_resized_);
 

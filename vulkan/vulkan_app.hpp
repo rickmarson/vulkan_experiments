@@ -41,6 +41,7 @@ protected:
     const uint32_t base_height_ = 600;
     GLFWwindow* window_ = nullptr;
     bool window_resized_ = false;
+    bool force_recreate_swapchain_ = false;
     std::string window_title_;
 
     VulkanBackend vulkan_backend_;

@@ -488,6 +488,14 @@ void SceneManager::deleteUniforms() {
     }
 
     scene_depth_buffer_.reset();
+    vk_descriptor_sets_.clear();
+
+    if (shadows_enabled_) {
+        backend_->destroyRenderPass(shadow_map_render_pass_);
+	    backend_->destroyPipeline(shadow_map_pipeline_);
+	    backend_->destroyUniformBuffer(shadow_map_data_buffer_);
+        vk_shadow_descriptor_sets_.clear();
+    }
 }
 
 void SceneManager::createDescriptorSets(const std::string& pipeline_name, const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {

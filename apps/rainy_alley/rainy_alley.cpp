@@ -47,6 +47,8 @@ private:
 
 	// options
 	float camera_fov_deg_ = 45.0f;
+	int number_of_particles_ = 1000;
+	float lifetime_after_collision_ = 0.25f;
 	
 };
 
@@ -97,25 +99,9 @@ bool RainyAlley::loadAssets() {
 	shaders_[rain_geometry_shader->getName()] = std::move(rain_geometry_shader);
 	shaders_[rain_fragment_shader->getName()] = std::move(rain_fragment_shader);
 
-	ParticleEmitterConfig emitter_config;
-	emitter_config.name = "rain_drops_emitter";
-	emitter_config.starting_transform = glm::identity<glm::mat4>();
-	emitter_config.min_box_extent = glm::vec3(-10.0f, -8.0, 15.0f);
-	emitter_config.max_box_extent = glm::vec3(2.0f, 8.0, 20.0f);
-	emitter_config.min_starting_velocity = glm::vec3(0.0f, 0.0f, -10.0f);
-	emitter_config.max_starting_velocity = glm::vec3(0.0f, 0.0f, 0.0f);
-	emitter_config.lifetime_after_collision = 0.25f;
-	emitter_config.texture_atlas = "textures/rain_drops.png";
-
 #ifndef NDEBUG
 	vulkan_backend_.enableTimestampQueries(8);
-	emitter_config.profile = true;
-	emitter_config.start_query_num = 0;
-	emitter_config.stop_query_num = 1;
 #endif
-	 
-	rain_drops_emitter_ = ParticleEmitter::createParticleEmitter(emitter_config, &vulkan_backend_);
-	rain_drops_emitter_->createParticles(1000, "shaders/rainfall_cp.spv");
 
 	auto extent = vulkan_backend_.getSwapChainExtent();
 	scene_manager_ = SceneManager::create(&vulkan_backend_);
@@ -151,6 +137,25 @@ bool RainyAlley::setupScene() {
 	pool_config.image_storage_buffers_count *= vulkan_backend_.getSwapChainSize();
 	
 	vulkan_backend_.createDescriptorPool(pool_config);
+
+
+	ParticleEmitterConfig emitter_config;
+	emitter_config.name = "rain_drops_emitter";
+	emitter_config.starting_transform = glm::identity<glm::mat4>();
+	emitter_config.min_box_extent = glm::vec3(-10.0f, -8.0, 15.0f);
+	emitter_config.max_box_extent = glm::vec3(2.0f, 8.0, 20.0f);
+	emitter_config.min_starting_velocity = glm::vec3(0.0f, 0.0f, -10.0f);
+	emitter_config.max_starting_velocity = glm::vec3(0.0f, 0.0f, 0.0f);
+	emitter_config.lifetime_after_collision = lifetime_after_collision_;
+	emitter_config.texture_atlas = "textures/rain_drops.png";
+#ifndef NDEBUG
+	emitter_config.profile = true;
+	emitter_config.start_query_num = 0;
+	emitter_config.stop_query_num = 1;
+#endif
+
+	rain_drops_emitter_ = ParticleEmitter::createParticleEmitter(emitter_config, &vulkan_backend_);
+	rain_drops_emitter_->createParticles(number_of_particles_, "shaders/rainfall_cp.spv");
 
 	RenderPassConfig render_pass_config;
 	render_pass_config.name = "Main Pass";
@@ -212,11 +217,11 @@ bool RainyAlley::setupScene() {
 }
 
 void RainyAlley::cleanupSwapChainAssets() {
+	rain_drops_emitter_.reset();
+
 	imgui_renderer_->cleanupGraphicsPipeline();
 
 	scene_manager_->deleteUniforms();
-	
-	rain_drops_emitter_->deleteUniformBuffers();
 
 	vulkan_backend_.destroyRenderPass(render_pass_);
 	vulkan_backend_.destroyPipeline(alley_graphics_pipeline_);
@@ -422,10 +427,28 @@ void RainyAlley::drawUi() {
 	ImGui::SetNextWindowPos(ImVec2(10, 10));
 
 	const auto high_dpi_scale = imgui_renderer_->getHighDpiScale();
-	ImGui::SetNextWindowSizeConstraints(ImVec2(80 * high_dpi_scale, 80 * high_dpi_scale), ImVec2(100 * high_dpi_scale, 150 * high_dpi_scale));
+	ImGui::SetNextWindowSizeConstraints(ImVec2(300 * high_dpi_scale, 100 * high_dpi_scale), ImVec2(450 * high_dpi_scale, 150 * high_dpi_scale));
 
 	ImGui::Begin("Options");                   
 	
+	ImGui::Text("Particles: ");
+	ImGui::SameLine();
+	ImGui::PushItemWidth(240);
+	ImGui::SliderInt("##Particles", &number_of_particles_, 1000, 10000);
+	ImGui::PopItemWidth();
+	if (ImGui::IsItemDeactivatedAfterEdit()) {
+		force_recreate_swapchain_ = true;
+	}
+	
+	ImGui::Text("Lifetime after collision: ");
+	ImGui::SameLine();
+	ImGui::PushItemWidth(80);
+	ImGui::InputFloat("##Lifetime", &lifetime_after_collision_, 0, 0, "%.3f");
+	ImGui::PopItemWidth();
+	if (ImGui::IsItemDeactivatedAfterEdit()) {
+		force_recreate_swapchain_ = true;
+	}
+
 	ImGui::End();
 
 	auto extent = vulkan_backend_.getSwapChainExtent();
