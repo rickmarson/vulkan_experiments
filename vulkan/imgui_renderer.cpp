@@ -301,7 +301,7 @@ RecordCommandsResult ImGuiRenderer::renderFrame(uint32_t swapchain_image, VkRend
         std::cerr << "[IMGUI Renderer] Failed to begin recording command buffer!" << std::endl;
         return makeRecordCommandsResult(false, command_buffers);
     }
-
+    
     // update push constants
     auto pc_iter = ui_pipeline_.push_constants.find(UI_TRANSFORM_PUSH_CONSTANT);
     if (pc_iter == ui_pipeline_.push_constants.end()) {

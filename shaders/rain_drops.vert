@@ -10,26 +10,19 @@ layout(location = 0) out vec4 out_colour;
 layout(location = 1) out mat4 out_proj;
 layout(location = 5) out uint out_texture_idx;
 
-layout(set = 0, binding = 0) uniform SceneData {
+layout(set = 0, binding = 0) uniform ViewProj {
     mat4 view;
     mat4 proj;
-    vec3 light_position;
-    vec4 light_intensity;
-    vec4 ambient_intensity;
-} scene;
-
-layout(set = 3, binding = 0) uniform ShadowMapData {
-    mat4 view;
-    mat4 proj;
-} shadow_map_data;
+} view_proj;
 
 void main() {
-    mat4 model_view = scene.view; // particles are alredy in world coords
-    mat4 proj = scene.proj;
+    mat4 model_view = view_proj.view; // particles are alredy in world coords
+    mat4 proj = view_proj.proj;
     worldToVulkan(model_view);
     projectionToVulkan(proj);
 
     gl_Position = model_view * vec4(in_position.xyz, 1.0);
+
     out_colour = vec4(1.0, 1.0, 1.0, 1.0);
     out_proj = proj;
     out_texture_idx = 0;

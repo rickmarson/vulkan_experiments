@@ -12,6 +12,7 @@
 class VulkanBackend;
 class Texture;
 class StaticMesh;
+class ShaderModule;
 
 /*
 * Lights, Cameras and Static Environment geometry
@@ -41,27 +42,21 @@ public:
 	
 	const SceneData& getSceneData() const { return scene_data_; }
 
-	DescriptorPoolConfig getDescriptorsCount(uint32_t expected_pipelines_count) const;
 	std::shared_ptr<StaticMesh> getMeshByIndex(uint32_t idx);
 	std::shared_ptr<StaticMesh> getMeshByName(const std::string& name);
 	std::shared_ptr<Texture> getTexture(uint32_t idx);
 	std::shared_ptr<Material> getMaterial(uint32_t idx);
 
+	DescriptorPoolConfig getDescriptorsCount(uint32_t expected_pipelines_count) const;
+	bool createGraphicsPipeline(const std::string& program_name, RenderPass& render_pass, uint32_t subpass_number);
+
+	void prepareForRendering();
 	void update();
+	RecordCommandsResult renderFrame(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info);
+	void cleanupSwapChainAssets();
 
-	void createUniforms();
-	void deleteUniforms();
-	void createDescriptorSets(const std::string& pipeline_name, const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
-	void updateDescriptorSets(const std::string& pipeline_name, const DescriptorSetMetadata& metadata);
-	void createGeometryDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts);
-	void updateGeometryDescriptorSets(const DescriptorSetMetadata& metadata, bool with_material = true);
-	std::vector<VkDescriptorSet>& getDescriptorSets(const std::string& pipeline_name);
 	std::shared_ptr<Texture>& getSceneDepthBuffer() { return scene_depth_buffer_; }
-
-	void bindSceneDescriptors(VkCommandBuffer& cmd_buffer, const Pipeline& pipeline, uint32_t swapchain_index);  // these can be shared across multiple pipelines that need scene-level data
-	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index, bool with_material = true);
-	void renderStaticShadowMap();
-
+	
 private:
 	void updateCameraTransform();
 	glm::mat4 lookAtMatrix() const;
@@ -70,11 +65,30 @@ private:
 	void setupShadowMapAssets();
 	void createShadowMapDescriptors();
 
+	void createUniforms();
+	void deleteUniforms();
+	void createSceneDescriptorSets();
+	void updateSceneDescriptorSets();
+	void createGeometryDescriptorSets();
+	void updateGeometryDescriptorSets(const DescriptorSetMetadata& metadata, bool with_material = true);
+	void updateDescriptorSets();
+
+	void bindSceneDescriptors(VkCommandBuffer& cmd_buffer, const Pipeline& pipeline, uint32_t swapchain_index);
+	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index, bool with_material = true);
+	
+	void renderStaticShadowMap();
+	
 	VulkanBackend* backend_;
 	SceneData scene_data_;
 	UniformBuffer scene_data_buffer_;
 	std::shared_ptr<Texture> scene_depth_buffer_;
-	std::map<std::string, std::vector<VkDescriptorSet>> vk_descriptor_sets_;
+	std::vector<VkDescriptorSet> vk_descriptor_sets_;
+	std::vector<VkCommandBuffer> command_buffers_; 
+
+	std::shared_ptr<ShaderModule> vertex_shader_;
+	std::shared_ptr<ShaderModule> fragment_shader_;
+	Pipeline scene_graphics_pipeline_;
+	uint32_t scene_subpass_number_;
 
 	Buffer scene_vertex_buffer_;
 	Buffer scene_index_buffer_;

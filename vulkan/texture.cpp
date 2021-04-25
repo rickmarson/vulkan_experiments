@@ -47,6 +47,9 @@ void Texture::cleanup() {
             vkDestroySampler(device_, vk_sampler_, nullptr);
         }
         vkDestroyImageView(device_, vk_image_view_, nullptr);
+        if (vk_sampler_image_view_ != VK_NULL_HANDLE) {
+            vkDestroyImageView(device_, vk_sampler_image_view_, nullptr);
+        }
         vkDestroyImage(device_, vk_image_, nullptr);
         vkFreeMemory(device_, vk_memory_, nullptr);
     }

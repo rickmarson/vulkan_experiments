@@ -173,8 +173,15 @@ struct SceneData {
     glm::vec4 ambient_intensity = glm::vec4(0.0f);
 };
 
+struct ViewProj {
+    glm::mat4 view = glm::mat4(1.0f);
+    glm::mat4 proj = glm::mat4(1.0f);
+};
+
 const uint32_t SCENE_UNIFORM_SET_ID = 0;  // all scene-wide uniforms (lights, camera, etc.)
+const uint32_t VIEW_PROJ_SET_ID = SCENE_UNIFORM_SET_ID;  // a subset of SceneData for pipelines that don't need lighting
 const std::string SCENE_DATA_BINDING_NAME = "scene";  // holds scene-wide information (view, projection, lights, etc..)
+const std::string VIEW_PROJ_BINDING_NAME = "view_proj"; 
 const std::string SCENE_TEXTURES_ARRAY = "scene_textures"; // global binding point holding all textures in the scene
 const std::string SCENE_DEPTH_BUFFER_STORAGE = "scene_depth_buffer";  // texel storage buffers used to store / load depth info across pipelines
 

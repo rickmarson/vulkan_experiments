@@ -35,10 +35,8 @@ private:
 	std::unique_ptr<ImGuiRenderer> imgui_renderer_;
 	std::vector<VkCommandBuffer> main_command_buffers_;
 
-	std::map<std::string, std::shared_ptr<ShaderModule>> shaders_;
 	std::unique_ptr<SceneManager> scene_manager_;
 	RenderPass render_pass_;
-	Pipeline graphics_pipeline_;
 
 	// options
 	float camera_fov_deg_ = 45.0f;
@@ -58,25 +56,6 @@ private:
 
 bool ModelViewer::loadAssets() {
 	main_command_buffers_ = vulkan_backend_.createPrimaryCommandBuffers(vulkan_backend_.getSwapChainSize());
-
-	auto vertex_shader = vulkan_backend_.createShaderModule("vertex");
-	vertex_shader->loadSpirvShader("shaders/model_viewer_vs.spv");
-
-	if (!vertex_shader->isVertexFormatCompatible(Vertex::getFormatInfo())) {
-		std::cerr << "Requested Vertex format is not compatible with pipeline input!" << std::endl;
-		return false;
-	}
-
-	auto fragment_shader = vulkan_backend_.createShaderModule("fragment");
-	fragment_shader->loadSpirvShader("shaders/model_viewer_fs.spv");
-	
-	if (!vertex_shader->isValid() || !fragment_shader->isValid()) {
-		std::cerr << "Failed to validate shaders!" << std::endl;
-		return false;
-	}
-
-	shaders_[vertex_shader->getName()] = std::move(vertex_shader);
-	shaders_[fragment_shader->getName()] = std::move(fragment_shader);
 
 	auto extent = vulkan_backend_.getSwapChainExtent();
 	scene_manager_ = SceneManager::create(&vulkan_backend_);
@@ -145,25 +124,28 @@ bool ModelViewer::setupScene() {
 	auto extent = vulkan_backend_.getSwapChainExtent();
 	scene_manager_->setCameraProperties(camera_fov_deg_, extent.width / (float)extent.height, 0.1f, 10.0f);
 
-	if (!createGraphicsPipeline()) {
-		return false;
-	}
-	if (!imgui_renderer_->createGraphicsPipeline(render_pass_, 1)) {
-		return false;
-	}
+	createGraphicsPipeline();
+	scene_manager_->prepareForRendering();
 
 	drawUi();
 
 	return true;
 }
 
+bool ModelViewer::createGraphicsPipeline() {
+	if (!scene_manager_->createGraphicsPipeline("model_viewer", render_pass_, 0)) {
+		return false;
+	}
+	if (!imgui_renderer_->createGraphicsPipeline(render_pass_, 1)) {
+		return false;
+	}
+	return true;
+}
+
 void ModelViewer::cleanupSwapChainAssets() {
 	imgui_renderer_->cleanupGraphicsPipeline();
-
-	scene_manager_->deleteUniforms();
-	
+	scene_manager_->cleanupSwapChainAssets();
 	vulkan_backend_.destroyRenderPass(render_pass_);
-	vulkan_backend_.destroyPipeline(graphics_pipeline_);
 }
 
 void ModelViewer::cleanup() {
@@ -171,7 +153,6 @@ void ModelViewer::cleanup() {
 	imgui_renderer_->shutDown();
 	vulkan_backend_.freeCommandBuffers(main_command_buffers_);
 	scene_manager_.reset();
-	shaders_.clear();
 }
 
 void ModelViewer::updateScene() {
@@ -201,29 +182,6 @@ void ModelViewer::updateScene() {
 	scene_manager_->update();
 
 	drawUi();
-}
-
-bool ModelViewer::createGraphicsPipeline() {
-	GraphicsPipelineConfig config;
-	config.name = "Solid Geometry";
-	config.vertex = shaders_["vertex"];
-	config.fragment = shaders_["fragment"];
-	config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	config.vertex_buffer_binding_desc = shaders_["vertex"]->getInputBindingDescription();
-	config.vertex_buffer_attrib_desc = shaders_["vertex"]->getInputAttributes();
-	config.render_pass = render_pass_;
-	config.subpass_number = 0;
-
-	graphics_pipeline_ = vulkan_backend_.createGraphicsPipeline(config);
-
-	scene_manager_->createUniforms();
-	scene_manager_->createGeometryDescriptorSets(graphics_pipeline_.vk_descriptor_set_layouts);
-	scene_manager_->updateGeometryDescriptorSets(graphics_pipeline_.descriptor_metadata);
-	
-	scene_manager_->createDescriptorSets(graphics_pipeline_.name, graphics_pipeline_.vk_descriptor_set_layouts);
-	scene_manager_->updateDescriptorSets(graphics_pipeline_.name, graphics_pipeline_.descriptor_metadata);
-
-	return graphics_pipeline_.vk_pipeline != VK_NULL_HANDLE;
 }
 
 RecordCommandsResult ModelViewer::renderFrame(uint32_t swapchain_image) {
@@ -259,23 +217,22 @@ RecordCommandsResult ModelViewer::renderFrame(uint32_t swapchain_image) {
 	render_pass_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
 	render_pass_info.pClearValues = clear_values.data();
 
-	vkCmdBeginRenderPass(command_buffers[0], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline);
-
-	scene_manager_->bindSceneDescriptors(command_buffers[0], graphics_pipeline_, swapchain_image);
+	vkCmdBeginRenderPass(command_buffers[0], &render_pass_info, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 	
-	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0); // does nothing if not in debug
+	auto scene_commands = scene_manager_->renderFrame(swapchain_image, render_pass_info);
+	auto success = std::get<0>(scene_commands);
 
-	scene_manager_->drawGeometry(command_buffers[0], graphics_pipeline_.vk_pipeline_layout, swapchain_image);
-
-	vulkan_backend_.writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 1); // does nothing if not in debug
+	if (success) {
+		auto scene_cmd_buffers = std::get<1>(scene_commands);
+		vkCmdExecuteCommands(command_buffers[0], static_cast<uint32_t>(scene_cmd_buffers.size()), scene_cmd_buffers.data());
+	}
 
 	// register UI overlay commands
 	vkCmdNextSubpass(command_buffers[0], VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-	
+
 	ImGuiProfileConfig ui_profile_config = { true, 2, 3 };
 	auto commands = imgui_renderer_->renderFrame(swapchain_image, render_pass_info, ui_profile_config);
-	auto success = std::get<0>(commands);
+	success = std::get<0>(commands);
 
 	if (success) {
 		auto ui_cmd_buffers = std::get<1>(commands);

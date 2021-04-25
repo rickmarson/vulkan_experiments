@@ -244,6 +244,7 @@ SceneManager::SceneManager(VulkanBackend* backend) :
 }
 
 SceneManager::~SceneManager() {
+    cleanupSwapChainAssets();
     backend_->destroyBuffer(scene_index_buffer_);
     backend_->destroyBuffer(scene_vertex_buffer_);
     for (auto& mat : materials_) {
@@ -258,6 +259,7 @@ SceneManager::~SceneManager() {
         backend_->destroyUniformBuffer(shadow_map_data_buffer_);
     }
     vk_descriptor_sets_.clear();
+    backend_->freeCommandBuffers(command_buffers_);
 }
 
 bool SceneManager::loadFromGlb(const std::string& file_path) {
@@ -455,6 +457,61 @@ std::shared_ptr<Material> SceneManager::getMaterial(uint32_t idx) {
     return std::shared_ptr<Material>();
 }
 
+bool SceneManager::createGraphicsPipeline(const std::string& program_name, RenderPass& render_pass, uint32_t subpass_number) { 
+    auto vertex_shader_name = program_name + "_vs";
+    auto fragment_shader_name = program_name + "_fs";
+
+    vertex_shader_ = backend_->createShaderModule(vertex_shader_name);
+	vertex_shader_->loadSpirvShader(std::string("shaders/") + vertex_shader_name + ".spv");
+
+	if (!vertex_shader_->isVertexFormatCompatible(Vertex::getFormatInfo())) {
+		std::cerr << "Vertex format is not compatible with pipeline input for " << vertex_shader_->getName() << std::endl;
+		return false;
+	}
+
+	fragment_shader_ = backend_->createShaderModule(fragment_shader_name);
+	fragment_shader_->loadSpirvShader(std::string("shaders/") + fragment_shader_name + ".spv");
+
+	if (!vertex_shader_->isValid() || !fragment_shader_->isValid()) {
+		std::cerr << "Failed to validate rain drops shaders!" << std::endl;
+		return false;
+	}
+
+    command_buffers_ = backend_->createSecondaryCommandBuffers(backend_->getSwapChainSize());
+    if (command_buffers_.empty()) {
+        return false;
+    }
+
+    scene_subpass_number_ = subpass_number;
+
+    GraphicsPipelineConfig config;
+	config.name = program_name;
+	config.vertex = vertex_shader_;
+	config.fragment = fragment_shader_;
+	config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	config.cullBackFace = false;
+	config.vertex_buffer_binding_desc = vertex_shader_->getInputBindingDescription();
+	config.vertex_buffer_attrib_desc =vertex_shader_->getInputAttributes();
+	config.render_pass = render_pass;
+	config.subpass_number = scene_subpass_number_;
+
+	scene_graphics_pipeline_ = backend_->createGraphicsPipeline(config);
+
+	createUniforms();
+    createSceneDescriptorSets();
+	createGeometryDescriptorSets();
+
+	return scene_graphics_pipeline_.vk_pipeline != VK_NULL_HANDLE;
+}
+
+void SceneManager::prepareForRendering() {
+    if (shadows_enabled_) {
+        renderStaticShadowMap();
+    }
+
+    updateDescriptorSets();
+}
+
 void SceneManager::update() {
     scene_data_.view = lookAtMatrix();
 
@@ -464,6 +521,55 @@ void SceneManager::update() {
 
     for (auto& mesh : meshes_) {
         mesh->update();
+    }
+}
+
+RecordCommandsResult SceneManager::renderFrame(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info) {
+    std::vector<VkCommandBuffer> command_buffers = { command_buffers_[swapchain_image] };
+    backend_->resetCommandBuffers(command_buffers);
+
+    VkCommandBufferInheritanceInfo inherit_info{};
+    inherit_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+    inherit_info.renderPass = render_pass_info.renderPass;
+    inherit_info.subpass = scene_subpass_number_;
+    inherit_info.framebuffer = render_pass_info.framebuffer;
+    inherit_info.occlusionQueryEnable = VK_FALSE;
+    inherit_info.queryFlags = 0;
+    inherit_info.pipelineStatistics = 0;
+
+    VkCommandBufferBeginInfo begin_info{};
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin_info.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+    begin_info.pInheritanceInfo = &inherit_info;
+
+    if (vkBeginCommandBuffer(command_buffers[0], &begin_info) != VK_SUCCESS) {
+        std::cerr << "[Particle Emitter] Failed to begin recording command buffer!" << std::endl;
+        return makeRecordCommandsResult(false, command_buffers);
+    }
+
+    bindSceneDescriptors(command_buffers[0], scene_graphics_pipeline_, swapchain_image);
+
+	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, scene_graphics_pipeline_.vk_pipeline);
+
+	backend_->writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 2); // does nothing if not in debug
+
+	drawGeometry(command_buffers[0], scene_graphics_pipeline_.vk_pipeline_layout, swapchain_image);
+
+	backend_->writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 3); // does nothing if not in debug
+
+    if (vkEndCommandBuffer(command_buffers[0]) != VK_SUCCESS) {
+        std::cerr << "[IMGUI Renderer] Failed to record command buffer!" << std::endl;
+        return makeRecordCommandsResult(false, command_buffers);
+    }
+
+    return makeRecordCommandsResult(true, command_buffers);
+}
+
+void SceneManager::cleanupSwapChainAssets() {
+    deleteUniforms();
+    vk_descriptor_sets_.clear();
+    if (scene_graphics_pipeline_.vk_pipeline != VK_NULL_HANDLE) {
+	    backend_->destroyPipeline(scene_graphics_pipeline_);
     }
 }
 
@@ -498,12 +604,12 @@ void SceneManager::deleteUniforms() {
     }
 }
 
-void SceneManager::createDescriptorSets(const std::string& pipeline_name, const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {
-    const auto& layout = descriptor_set_layouts.find(SCENE_UNIFORM_SET_ID)->second;
+void SceneManager::createSceneDescriptorSets() {
+    const auto& layout = scene_graphics_pipeline_.vk_descriptor_set_layouts.find(SCENE_UNIFORM_SET_ID)->second;
     std::vector<VkDescriptorSetLayout> layouts(backend_->getSwapChainSize(), layout);
 
     if (shadows_enabled_) {
-        const auto& shadow_layout = descriptor_set_layouts.find(SHADOW_MAP_SET_ID)->second;
+        const auto& shadow_layout = scene_graphics_pipeline_.vk_descriptor_set_layouts.find(SHADOW_MAP_SET_ID)->second;
         for (auto i = 0; i < backend_->getSwapChainSize(); ++i) {
             layouts.push_back(shadow_layout);
         }
@@ -515,28 +621,17 @@ void SceneManager::createDescriptorSets(const std::string& pipeline_name, const 
     alloc_info.descriptorSetCount = layouts.size();
     alloc_info.pSetLayouts = layouts.data();
 
-    std::vector<VkDescriptorSet> layout_descriptor_sets(layouts.size());
-    if (vkAllocateDescriptorSets(backend_->getDevice(), &alloc_info, layout_descriptor_sets.data()) != VK_SUCCESS) {
+    vk_descriptor_sets_.resize(layouts.size());
+    if (vkAllocateDescriptorSets(backend_->getDevice(), &alloc_info, vk_descriptor_sets_.data()) != VK_SUCCESS) {
         std::cerr << "Failed to allocate Mesh descriptor sets!" << std::endl;
         return;
     }
-
-    // store one set of scene-wide descriptors for each pipeline that needs scene data 
-    // to avoid declaring lots of unused uniforms just so that the bindings are compatible
-    vk_descriptor_sets_[pipeline_name] = std::move(layout_descriptor_sets);
 }
 
-void SceneManager::updateDescriptorSets(const std::string& pipeline_name, const DescriptorSetMetadata& metadata) {
-    if (vk_descriptor_sets_.find(pipeline_name) == vk_descriptor_sets_.end()) {
-        std::cerr << "updateDescriptorSets(): Descriptor sets for pipeline " << pipeline_name << " do not exists!" << std::endl;
-        // just carry on and crash as there's something badly wrong if this is triggered 
-    }
-
-    auto& descriptor_sets = vk_descriptor_sets_[pipeline_name];
-
-    const auto& bindings = metadata.set_bindings.find(SCENE_UNIFORM_SET_ID)->second;
-    auto first = descriptor_sets.begin();
-    auto last = descriptor_sets.begin() + backend_->getSwapChainSize();
+void SceneManager::updateSceneDescriptorSets() {
+    const auto& bindings = scene_graphics_pipeline_.descriptor_metadata.set_bindings.find(SCENE_UNIFORM_SET_ID)->second;
+    auto first = vk_descriptor_sets_.begin();
+    auto last = vk_descriptor_sets_.begin() + backend_->getSwapChainSize();
     auto scene_descriptors = std::vector<VkDescriptorSet>(first, last);
     backend_->updateDescriptorSets(scene_data_buffer_, scene_descriptors, bindings.find(SCENE_DATA_BINDING_NAME)->second);
 
@@ -572,29 +667,20 @@ void SceneManager::updateDescriptorSets(const std::string& pipeline_name, const 
     }
 
     if (shadows_enabled_) {
-        const auto& shadow_bindings = metadata.set_bindings.find(SHADOW_MAP_SET_ID)->second;
-        first = descriptor_sets.begin() + backend_->getSwapChainSize();
-        last = descriptor_sets.end();
+        const auto& shadow_bindings = scene_graphics_pipeline_.descriptor_metadata.set_bindings.find(SHADOW_MAP_SET_ID)->second;
+        first = vk_descriptor_sets_.begin() + backend_->getSwapChainSize();
+        last = vk_descriptor_sets_.end();
         auto shadow_descriptors = std::vector<VkDescriptorSet>(first, last);
         backend_->updateDescriptorSets(shadow_map_data_buffer_, shadow_descriptors, shadow_bindings.find(SHADOW_MAP_PROJ_NAME)->second);
         shadow_map_render_pass_.depth_attachment->updateDescriptorSets(shadow_descriptors, shadow_bindings.find(SHADOW_MAP_NAME)->second);
     }
 }
 
-std::vector<VkDescriptorSet>& SceneManager::getDescriptorSets(const std::string& pipeline_name) { 
-    if (vk_descriptor_sets_.find(pipeline_name) == vk_descriptor_sets_.end()) {
-        std::cerr << "getDescriptorSets(): Descriptor sets for pipeline " << pipeline_name << " do not exists!" << std::endl;
-        // just carry on and crash as there's something badly wrong if this is triggered 
-    }
-    
-    return vk_descriptor_sets_[pipeline_name]; 
-}
-
-void SceneManager::createGeometryDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {
+void SceneManager::createGeometryDescriptorSets() {
     // all pipelines that want to draw the scene geometry need to bind the same sets, so we only need to
     // generate them only once and they will be compatible with all pipelines
     for (auto& mesh : meshes_) {
-        mesh->createDescriptorSets(descriptor_set_layouts);
+        mesh->createDescriptorSets(scene_graphics_pipeline_.vk_descriptor_set_layouts);
     }
 }
 
@@ -604,15 +690,20 @@ void SceneManager::updateGeometryDescriptorSets(const DescriptorSetMetadata& met
     }
 }
 
+
+void SceneManager::updateDescriptorSets() {
+    updateSceneDescriptorSets();
+    updateGeometryDescriptorSets(scene_graphics_pipeline_.descriptor_metadata, true);
+}
+
 void SceneManager::bindSceneDescriptors(VkCommandBuffer& cmd_buffer, const Pipeline& pipeline, uint32_t swapchain_index) {
-    auto& descriptors = getDescriptorSets(pipeline.name);
     uint32_t scene_data_offset = swapchain_index;
 	// scene data
-	vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &descriptors[scene_data_offset], 0, nullptr);
+	vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &vk_descriptor_sets_[scene_data_offset], 0, nullptr);
 	if (shadows_enabled_) {
         // shadow map data
         uint32_t shadow_map_offset = backend_->getSwapChainSize() + scene_data_offset;
-	    vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.vk_pipeline_layout, SHADOW_MAP_SET_ID, 1, &descriptors[shadow_map_offset], 0, nullptr);
+	    vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.vk_pipeline_layout, SHADOW_MAP_SET_ID, 1, &vk_descriptor_sets_[shadow_map_offset], 0, nullptr);
     }
 }
 
