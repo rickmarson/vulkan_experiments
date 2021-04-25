@@ -10,10 +10,25 @@
 #include "scene_manager.hpp"
 #include "imgui_renderer.hpp"
 #include "particles/rain_emitter_gs.hpp"
+#include "particles/rain_emitter_vb.hpp"
+#include "particles/rain_emitter_inst.hpp"
 
 #include <chrono>
 
 // Declarations
+const char* const kEmitterTypes[] = {
+	"Geometry Shader",
+	"Primitive Restart",
+	"Instancing",
+	0
+};
+
+enum EmitterType : int {
+	GEOMETRY_SHADER,
+	PRIMITIVE_RESTART,
+	INSTANCING,
+};
+
 
 class RainyAlley : public VulkanApp {
 public:
@@ -45,7 +60,7 @@ private:
 	float camera_fov_deg_ = 45.0f;
 	int number_of_particles_ = 1000;
 	float lifetime_after_collision_ = 0.25f;
-	
+	EmitterType selected_emitter_type_ = GEOMETRY_SHADER;
 };
 
 // Implementation
@@ -74,6 +89,10 @@ bool RainyAlley::loadAssets() {
 	imgui_renderer_ = ImGuiRenderer::create(&vulkan_backend_);
 	imgui_renderer_->setUp(window_);
 
+	return true;
+}
+
+bool RainyAlley::setupScene() {
 	ParticleEmitterConfig emitter_config;
 	emitter_config.name = "rain_drops_emitter";
 	emitter_config.starting_transform = glm::identity<glm::mat4>();
@@ -89,12 +108,19 @@ bool RainyAlley::loadAssets() {
 	emitter_config.start_query_num = 0;
 	emitter_config.stop_query_num = 1;
 #endif
-	rain_drops_emitter_ = RainEmitterGS::createParticleEmitter(emitter_config, &vulkan_backend_);
 
-	return true;
-}
+	switch (selected_emitter_type_) {
+		case GEOMETRY_SHADER:
+			rain_drops_emitter_ = RainEmitterGS::createParticleEmitter(emitter_config, &vulkan_backend_);
+			break;
+		case PRIMITIVE_RESTART:
+			rain_drops_emitter_ = RainEmitterVB::createParticleEmitter(emitter_config, &vulkan_backend_);
+			break;
+		case INSTANCING:
+			rain_drops_emitter_ = RainEmitterInst::createParticleEmitter(emitter_config, &vulkan_backend_);
+			break;
+	}
 
-bool RainyAlley::setupScene() {
 	DescriptorPoolConfig pool_config;
 
 	auto scene_pool = scene_manager_->getDescriptorsCount(2);
@@ -313,7 +339,11 @@ void RainyAlley::drawUi() {
 	const auto high_dpi_scale = imgui_renderer_->getHighDpiScale();
 	ImGui::SetNextWindowSizeConstraints(ImVec2(300 * high_dpi_scale, 100 * high_dpi_scale), ImVec2(450 * high_dpi_scale, 150 * high_dpi_scale));
 
-	ImGui::Begin("Options");                   
+	ImGui::Begin("Options");
+
+	if (ImGui::Combo("Emitter Type", (int*)&selected_emitter_type_, kEmitterTypes, 3)) {
+		// TODO
+	}  
 	
 	ImGui::Text("Particles: ");
 	ImGui::SameLine();
