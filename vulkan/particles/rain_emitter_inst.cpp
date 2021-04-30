@@ -25,7 +25,7 @@ RainEmitterInst::~RainEmitterInst() {
   
 }
 
-bool RainEmitterInst::createAssets(std::vector<ParticleVertex>& particles) {
+bool RainEmitterInst::createAssets(std::vector<Particle>& particles) {
    return false;
 }
 

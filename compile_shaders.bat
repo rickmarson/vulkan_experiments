@@ -12,7 +12,8 @@ glslc %ROOT_PATH%/shaders/model_viewer.frag -o %ROOT_PATH%/shaders/model_viewer_
 
 glslc %ROOT_PATH%/shaders/alley.vert -o %ROOT_PATH%/shaders/alley_vs.spv
 glslc %ROOT_PATH%/shaders/alley.frag -o %ROOT_PATH%/shaders/alley_fs.spv
-glslc %ROOT_PATH%/shaders/rain_drops.vert -o %ROOT_PATH%/shaders/rain_drops_vs.spv
-glslc %ROOT_PATH%/shaders/rain_drops.geom -o %ROOT_PATH%/shaders/rain_drops_gm.spv
+glslc %ROOT_PATH%/shaders/rain_drops_geom.vert -o %ROOT_PATH%/shaders/rain_drops_geom_vs.spv
+glslc %ROOT_PATH%/shaders/rain_drops_geom.geom -o %ROOT_PATH%/shaders/rain_drops_geom_gm.spv
+glslc %ROOT_PATH%/shaders/rain_drops_vb.vert -o %ROOT_PATH%/shaders/rain_drops_vb_vs.spv
 glslc %ROOT_PATH%/shaders/rain_drops.frag -o %ROOT_PATH%/shaders/rain_drops_fs.spv
 glslc %ROOT_PATH%/shaders/rainfall.comp -o %ROOT_PATH%/shaders/rainfall_cp.spv

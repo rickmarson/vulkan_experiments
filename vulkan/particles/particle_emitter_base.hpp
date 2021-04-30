@@ -51,7 +51,7 @@ public:
 protected:
 	explicit ParticleEmitterBase(const ParticleEmitterConfig& config, VulkanBackend* backend);
 
-	virtual bool createAssets(std::vector<ParticleVertex>& particles) = 0;
+	virtual bool createAssets(std::vector<Particle>& particles) = 0;
 	virtual void createUniformBuffers() = 0;
 	virtual void createGraphicsDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) = 0;
 	virtual void updateGraphicsDescriptorSets(const DescriptorSetMetadata& metadata) = 0;

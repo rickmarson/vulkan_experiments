@@ -151,19 +151,11 @@ struct Vertex {
     }
 };
 
-struct ParticleVertex {
+struct Particle {
     glm::vec4 pos;
     glm::vec4 vel;
-
-    static VertexFormatInfo getFormatInfo() {
-        std::vector<size_t> offsets = { offsetof(ParticleVertex, pos),  offsetof(ParticleVertex, vel) };
-        return { sizeof(ParticleVertex) , offsets };
-    }
-
-    bool operator==(const ParticleVertex& other) const {
-        return pos == other.pos && vel == other.vel;
-    }
 };
+
 
 struct SceneData {
     glm::mat4 view = glm::mat4(1.0f);

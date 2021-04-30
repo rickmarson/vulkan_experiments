@@ -24,11 +24,14 @@ public:
 	virtual bool createGraphicsPipeline(RenderPass& render_pass, uint32_t subpass_number) override;
 
 private:
-	virtual bool createAssets(std::vector<ParticleVertex>& particles) override;
+	virtual bool createAssets(std::vector<Particle>& particles) override;
 	virtual void createUniformBuffers() override;
 	virtual void createGraphicsDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) override;
 	virtual void updateGraphicsDescriptorSets(const DescriptorSetMetadata& metadata) override;
 	virtual void createComputeDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) override;
 	virtual void updateComputeDescriptorSets(const DescriptorSetMetadata& metadata, std::shared_ptr<Texture>& scene_depth_buffer) override;
 	virtual RecordCommandsResult recordComputeCommands() override;
+
+	Buffer particle_vertex_buffer_;
+	Buffer particle_index_buffer_;
 };

@@ -12,6 +12,21 @@
 #include <glm/gtx/matrix_decompose.hpp>
 
 
+struct ParticleVertex {
+    glm::vec4 pos;
+    glm::vec4 vel;
+
+    static VertexFormatInfo getFormatInfo() {
+        std::vector<size_t> offsets = { offsetof(ParticleVertex, pos),  offsetof(ParticleVertex, vel) };
+        return { sizeof(ParticleVertex) , offsets };
+    }
+
+    bool operator==(const ParticleVertex& other) const {
+        return pos == other.pos && vel == other.vel;
+    }
+};
+
+
 std::shared_ptr<RainEmitterGS> RainEmitterGS::createParticleEmitter(const ParticleEmitterConfig& config, VulkanBackend* backend) {
     return std::make_shared<RainEmitterGS>(config, backend);
 }
@@ -25,15 +40,17 @@ RainEmitterGS::~RainEmitterGS() {
   
 }
 
-bool RainEmitterGS::createAssets(std::vector<ParticleVertex>& particles) {
-    particle_buffer_ = backend_->createVertexBuffer<ParticleVertex>(config_.name + "_particles", particles, false /*host_visible*/, true /*compute_visible*/);
+bool RainEmitterGS::createAssets(std::vector<Particle>& particles) {
+    std::vector<ParticleVertex> particles_vertices(particles.begin(), particles.end());
+
+    particle_buffer_ = backend_->createVertexBuffer<ParticleVertex>(config_.name + "_particles", particles_vertices, false /*host_visible*/, true /*compute_visible*/);
     
     // because this vertex buffer is also accessible from the compute pipeline as a storage texel buffer, we need an additional buffer view
     if (!backend_->createBufferView(particle_buffer_, VK_FORMAT_R32G32B32A32_SFLOAT)) {
         return false;
     }
 
-    particle_respawn_buffer_ = backend_->createVertexBuffer<ParticleVertex>(config_.name + "_particles_respawn", particles, false /*host_visible*/, true /*compute_visible*/);
+    particle_respawn_buffer_ = backend_->createVertexBuffer<ParticleVertex>(config_.name + "_particles_respawn", particles_vertices, false /*host_visible*/, true /*compute_visible*/);
 
     // because this vertex buffer is also accessible from the compute pipeline as a storage texel buffer, we need an additional buffer view
     if (!backend_->createBufferView(particle_respawn_buffer_, VK_FORMAT_R32G32B32A32_SFLOAT)) {
@@ -53,16 +70,16 @@ bool RainEmitterGS::createAssets(std::vector<ParticleVertex>& particles) {
     compute_command_buffers_ = backend_->createPrimaryCommandBuffers(1);
 
     // graphics pipeline assets
-    vertex_shader_ = backend_->createShaderModule("rain_drops_vs");
-	vertex_shader_->loadSpirvShader("shaders/rain_drops_vs.spv");
+    vertex_shader_ = backend_->createShaderModule("rain_drops_geom_vs");
+	vertex_shader_->loadSpirvShader("shaders/rain_drops_geom_vs.spv");
 
 	if (!vertex_shader_->isVertexFormatCompatible(ParticleVertex::getFormatInfo())) {
 		std::cerr << "ParticleVertex format is not compatible with pipeline input for " << vertex_shader_->getName() << std::endl;
 		return false;
 	}
 
-	geometry_shader_ = backend_->createShaderModule("rain_drops_gm");
-	geometry_shader_->loadSpirvShader("shaders/rain_drops_gm.spv");
+	geometry_shader_ = backend_->createShaderModule("rain_drops_geom_gm");
+	geometry_shader_->loadSpirvShader("shaders/rain_drops_geom_gm.spv");
 
 	fragment_shader_ = backend_->createShaderModule("rain_drops_fs");
 	fragment_shader_->loadSpirvShader("shaders/rain_drops_fs.spv");

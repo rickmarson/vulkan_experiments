@@ -71,7 +71,7 @@ bool ParticleEmitterBase::createParticles(uint32_t count) {
     std::uniform_real_distribution<float> uniform_dist_vel_y(min_speed_y, max_speed_y);
     std::uniform_real_distribution<float> uniform_dist_vel_z(min_speed_z, max_speed_z);
    
-    std::vector<ParticleVertex> particles(count);
+    std::vector<Particle> particles(count);
     for (uint32_t i = 0; i < count; ++i) {
         particles[i] = { 
             glm::vec4(uniform_dist_x(e), uniform_dist_y(e), uniform_dist_z(e), 0.0),   // w holds a collision flag
