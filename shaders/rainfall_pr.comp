@@ -1,0 +1,90 @@
+#version 450
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+#include "common.glsl"
+
+layout(local_size_x = 32) in;
+
+layout(set = 0, binding = 0, rgba32f) uniform imageBuffer particle_buffer;
+layout(set = 0, binding = 1, rgba32f) uniform imageBuffer respawn_buffer;
+layout(set = 0, binding = 2, rgba32f) uniform imageBuffer vertex_buffer;
+
+layout(set = 1, binding = 0) uniform Camera {
+    mat4 view;
+    mat4 proj;
+    ivec2 framebuffer_size;
+} camera;
+layout(set = 1, binding = 1, rgba32f) uniform image2D scene_depth_buffer; // holds per-fragment depth + surface normal 
+
+layout(push_constant) uniform GlobalState {
+    uint particles_count;
+    float delta_time;
+} global_state;
+
+const vec3 g = vec3(0.0, 0.0, -9.81);
+const float quad_half_size = 0.05;
+
+void main() {
+    if (gl_GlobalInvocationID.x >= global_state.particles_count) return;
+
+    int particle_idx = int(gl_GlobalInvocationID.x * 2);
+    vec4 pos = imageLoad(particle_buffer, particle_idx);
+    vec4 vel = imageLoad(particle_buffer, particle_idx + 1);
+    
+    bool collided = pos.w > 0.5 ? true : false;  // pos.w holds a collision flag
+    bool respawn = false;
+
+    if (!collided) {
+        vec3 v_next = vel.xyz + g * global_state.delta_time;
+        vec3 p_next = pos.xyz + v_next * global_state.delta_time;
+        if (p_next.z < -5.0)  respawn = true;
+
+        vec3 screen_pos;
+        if (worldToScreen(camera.proj, camera.view, camera.framebuffer_size, p_next, screen_pos)) {
+            ivec2 depth_idx = ivec2( screen_pos.x, screen_pos.y ); 
+            vec4 depth_normal = imageLoad(scene_depth_buffer, depth_idx);
+            float depth = depth_normal.x;
+            vec3 surface_normal = depth_normal.yzw; // note that normals are stored in world coords
+            if (abs(screen_pos.z - depth) <= 1e-3) {
+                collided = true;
+                
+                // only "splash" on surfaces that are near-parallel to the ground, respawn the rest immediately
+                float to_vertical = dot(normalize(surface_normal), vec3(0.0, 0.0, 1.0));
+                to_vertical = acos(to_vertical);
+                if (to_vertical > 0.7) respawn = true;
+            }
+        }
+
+        pos = vec4(p_next, collided ? 1.0 : 0.0);
+        vel = vec4(v_next, vel.w);
+    } else {
+        // vel.w holds how long a particle should be kept alive after a collision 
+        // i.e. how long the "splash" lasts
+        vel.w -= global_state.delta_time;
+        if (vel.w <= 0.0) respawn = true;
+    }
+
+    if (respawn) {
+        pos = imageLoad(respawn_buffer, particle_idx);
+        vel = imageLoad(respawn_buffer, particle_idx + 1);
+    }
+
+    imageStore(particle_buffer, particle_idx, pos);
+    imageStore(particle_buffer, particle_idx + 1, vel);
+
+    // build quad in view space
+    mat4 view = camera.view;
+    worldToVulkan(view);
+    vec4 pos_view = view * vec4(pos.xyz, 1.0);
+    pos_view.w = pos.w;
+    vec4 v1 = pos_view + vec4(-quad_half_size, -quad_half_size, 0.0, 0.0);
+    vec4 v2 = pos_view + vec4(quad_half_size, -quad_half_size, 0.0, 0.0);
+    vec4 v3 = pos_view + vec4(-quad_half_size, quad_half_size, 0.0, 0.0);
+    vec4 v4 = pos_view + vec4(quad_half_size, quad_half_size, 0.0, 0.0);
+
+    int vertex_idx = int(gl_GlobalInvocationID.x * 4);
+    imageStore(vertex_buffer, vertex_idx, v1);
+    imageStore(vertex_buffer, vertex_idx + 1, v2);
+    imageStore(vertex_buffer, vertex_idx + 2, v3);
+    imageStore(vertex_buffer, vertex_idx + 3, v4);
+}

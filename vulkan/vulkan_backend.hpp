@@ -62,6 +62,7 @@ struct GraphicsPipelineConfig {
     bool enableTransparency = false;
     bool showWireframe = false;
     bool dynamicStates = false;
+    bool enablePrimitiveRestart = false;
 
     RenderPass render_pass;
     uint32_t subpass_number = 0;
@@ -85,7 +86,7 @@ public:
 
     void resetWindowSwapExtent(VkExtent2D extent) { window_swap_extent_ = extent; }
     VkExtent2D getSwapChainExtent() const { return window_swap_extent_; }
-    uint32_t getSwapChainSize() const { return swap_chain_images_.size(); }
+    uint32_t getSwapChainSize() const { return uint32_t(swap_chain_images_.size()); }
     VkDescriptorPool getDescriptorPool() { return descriptor_pool_; }
     VkDevice getDevice() { return device_; }
     VkSampleCountFlagBits getMaxMSAASamples() const { return max_msaa_samples_; }

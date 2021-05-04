@@ -687,7 +687,7 @@ Pipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineConfig& con
     VkPipelineInputAssemblyStateCreateInfo input_assembly{};
     input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     input_assembly.topology = config.topology;
-    input_assembly.primitiveRestartEnable = VK_FALSE;
+    input_assembly.primitiveRestartEnable = config.enablePrimitiveRestart ? VK_TRUE : VK_FALSE;
 
     VkPipelineViewportStateCreateInfo viewport_state{};
     viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -764,7 +764,7 @@ Pipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineConfig& con
     pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(layout_info.descriptors_set_layouts_aux.size());
     pipeline_layout_info.pSetLayouts = layout_info.descriptors_set_layouts_aux.data();
-    pipeline_layout_info.pushConstantRangeCount = layout_info.push_constants_array.size();
+    pipeline_layout_info.pushConstantRangeCount = uint32_t(layout_info.push_constants_array.size());
     pipeline_layout_info.pPushConstantRanges = layout_info.push_constants_array.size() > 0 ? layout_info.push_constants_array.data() : nullptr;
 
     VkPipelineLayout pipeline_layout;
@@ -869,7 +869,7 @@ Pipeline VulkanBackend::createComputePipeline(const ComputePipelineConfig& confi
     pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(descriptors_set_layouts_aux.size());
     pipeline_layout_info.pSetLayouts = descriptors_set_layouts_aux.data();
-    pipeline_layout_info.pushConstantRangeCount = push_constants_array.size();
+    pipeline_layout_info.pushConstantRangeCount = uint32_t(push_constants_array.size());
     pipeline_layout_info.pPushConstantRanges = push_constants_array.size() > 0 ? push_constants_array.data() : nullptr;
 
     VkPipelineLayout pipeline_layout;
@@ -1857,7 +1857,7 @@ std::vector<float> VulkanBackend::tryRetrieveTimestampQueries() {
         auto value = result[q];
         auto available = result[q + 1];
         if (available > 0) {
-            result_ms.push_back(value * timestamp_period_ * 1e-6);  // nanoseconds -> milliseconds
+            result_ms.push_back(value * timestamp_period_ * float(1e-6));  // nanoseconds -> milliseconds
         }
     }
 

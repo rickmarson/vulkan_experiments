@@ -14,10 +14,13 @@ target_link_libraries(rainy_alley ${Vulkan_LIBRARIES} vulkan glfw imgui)
 file(GLOB SHADERS "${CMAKE_SOURCE_DIR}/shaders/shadow_map_vs.spv"
                   "${CMAKE_SOURCE_DIR}/shaders/alley_vs.spv"
                   "${CMAKE_SOURCE_DIR}/shaders/alley_fs.spv"
-                  "${CMAKE_SOURCE_DIR}/shaders/rain_drops_vs.spv"
-                  "${CMAKE_SOURCE_DIR}/shaders/rain_drops_gm.spv"
-                  "${CMAKE_SOURCE_DIR}/shaders/rain_drops_fs.spv"
-                  "${CMAKE_SOURCE_DIR}/shaders/rainfall_cp.spv")
+                  "${CMAKE_SOURCE_DIR}/shaders/rain_drops_geom_vs.spv"
+                  "${CMAKE_SOURCE_DIR}/shaders/rain_drops_pr_vs.spv"
+                  "${CMAKE_SOURCE_DIR}/shaders/rain_drops_geom_gm.spv"
+                  "${CMAKE_SOURCE_DIR}/shaders/rain_drops_geom_fs.spv"
+                  "${CMAKE_SOURCE_DIR}/shaders/rain_drops_pr_fs.spv"
+                  "${CMAKE_SOURCE_DIR}/shaders/rainfall_geom_cp.spv"
+                  "${CMAKE_SOURCE_DIR}/shaders/rainfall_pr_cp.spv")
 set(SHADERS ${SHADERS} ${IMGUI_SHADERS})
 
 file(GLOB OBJECTS "${CMAKE_SOURCE_DIR}/meshes/alley.glb")

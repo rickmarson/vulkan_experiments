@@ -59,8 +59,6 @@ protected:
 	virtual void updateComputeDescriptorSets(const DescriptorSetMetadata& metadata, std::shared_ptr<Texture>& scene_depth_buffer) = 0;
 	virtual RecordCommandsResult recordComputeCommands() = 0;
 
-	uint32_t getVertexCount() const { return global_state_pc_.particles_count; }
-	const Buffer& getVertexBuffer() const { return particle_buffer_; }
 	std::shared_ptr<Texture> getTexture() { return texture_atlas_; }
 
 	ParticleEmitterConfig config_;

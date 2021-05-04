@@ -10,7 +10,7 @@
 #include "scene_manager.hpp"
 #include "imgui_renderer.hpp"
 #include "particles/rain_emitter_gs.hpp"
-#include "particles/rain_emitter_vb.hpp"
+#include "particles/rain_emitter_pr.hpp"
 #include "particles/rain_emitter_inst.hpp"
 
 #include <chrono>
@@ -114,7 +114,7 @@ bool RainyAlley::setupScene() {
 			rain_drops_emitter_ = RainEmitterGS::createParticleEmitter(emitter_config, &vulkan_backend_);
 			break;
 		case PRIMITIVE_RESTART:
-			rain_drops_emitter_ = RainEmitterVB::createParticleEmitter(emitter_config, &vulkan_backend_);
+			rain_drops_emitter_ = RainEmitterPR::createParticleEmitter(emitter_config, &vulkan_backend_);
 			break;
 		case INSTANCING:
 			rain_drops_emitter_ = RainEmitterInst::createParticleEmitter(emitter_config, &vulkan_backend_);
@@ -342,7 +342,7 @@ void RainyAlley::drawUi() {
 	ImGui::Begin("Options");
 
 	if (ImGui::Combo("Emitter Type", (int*)&selected_emitter_type_, kEmitterTypes, 3)) {
-		// TODO
+		force_recreate_swapchain_ = true;
 	}  
 	
 	ImGui::Text("Particles: ");
@@ -373,7 +373,7 @@ void RainyAlley::drawUi() {
 
 	ImGui::Begin("Stats");
 	
-	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8, 0.35, 0.35, 1.0));
+	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.35f, 0.35f, 1.0f));
 
 	ImGui::Text("Frame time: %.3f ms/frame", 1000.0f / ImGui::GetIO().Framerate);
 	ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);

@@ -287,6 +287,12 @@ void ShaderModule::extractInputVariables(SpvReflectShaderModule& reflect_module)
         return;
     }
 
+    // remove glsl built-in input variables as they are not part of the vertex format and will cause subsequent checks to fail
+    input_vars.erase(std::remove_if(input_vars.begin(), 
+                                                      input_vars.end(),
+                                                      [](const SpvReflectInterfaceVariable* v){ return std::string(v->name).find("gl_") != std::string::npos; }),
+                                input_vars.end());
+
     input_binding_description_.binding = 0;
     input_binding_description_.stride = 0;  // computed below
     input_binding_description_.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;

@@ -415,7 +415,7 @@ DescriptorPoolConfig SceneManager::getDescriptorsCount(uint32_t expected_pipelin
 
     config.uniform_buffers_count += 1;
     config.image_storage_buffers_count += 1;
-    config.image_samplers_count += textures_.size();
+    config.image_samplers_count += uint32_t(textures_.size());
 
     config = config * expected_pipelines_count;
     
@@ -610,7 +610,7 @@ void SceneManager::createSceneDescriptorSets() {
 
     if (shadows_enabled_) {
         const auto& shadow_layout = scene_graphics_pipeline_.vk_descriptor_set_layouts.find(SHADOW_MAP_SET_ID)->second;
-        for (auto i = 0; i < backend_->getSwapChainSize(); ++i) {
+        for (uint32_t i = 0; i < backend_->getSwapChainSize(); ++i) {
             layouts.push_back(shadow_layout);
         }
     }
@@ -618,7 +618,7 @@ void SceneManager::createSceneDescriptorSets() {
     VkDescriptorSetAllocateInfo alloc_info{};
     alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     alloc_info.descriptorPool = backend_->getDescriptorPool();
-    alloc_info.descriptorSetCount = layouts.size();
+    alloc_info.descriptorSetCount = uint32_t(layouts.size());
     alloc_info.pSetLayouts = layouts.data();
 
     vk_descriptor_sets_.resize(layouts.size());

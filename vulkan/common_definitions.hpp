@@ -171,7 +171,6 @@ struct ViewProj {
 };
 
 const uint32_t SCENE_UNIFORM_SET_ID = 0;  // all scene-wide uniforms (lights, camera, etc.)
-const uint32_t VIEW_PROJ_SET_ID = SCENE_UNIFORM_SET_ID;  // a subset of SceneData for pipelines that don't need lighting
 const std::string SCENE_DATA_BINDING_NAME = "scene";  // holds scene-wide information (view, projection, lights, etc..)
 const std::string VIEW_PROJ_BINDING_NAME = "view_proj"; 
 const std::string SCENE_TEXTURES_ARRAY = "scene_textures"; // global binding point holding all textures in the scene
@@ -202,15 +201,6 @@ const std::string MODEL_DATA_BINDING_NAME = "model";  // holds model-specific nu
 const uint32_t SURFACE_UNIFORM_SET_ID = 2;  // all samplers that apply to one surface (one object can have multiple surfaces)
 const std::string SURFACE_MATERIAL_BINDING_NAME = "material";
 
-const uint32_t PARTICLES_UNIFORM_SET_ID = 1;
-const std::string PARTICLES_TEXTURE_ATLAS_BINDING_NAME = "texture_atlas";
-
-const uint32_t COMPUTE_PARTICLE_BUFFER_SET_ID = 0;
-const std::string COMPUTE_PARTICLE_BUFFER_BINDING_NAME = "particle_buffer";
-const std::string COMPUTE_RESPAWN_BUFFER_BINDING_NAME = "respawn_buffer";
-
-const uint32_t COMPUTE_CAMERA_SET_ID = 1;  // camera / scene related data passed to compute shaders
-const std::string CAMERA_BINDING_NAME = "camera"; 
 // SCENE_DEPTH_BUFFER_STORAGE is also part of this set at binding 1, 1
 
 struct ParticlesGlobalState {

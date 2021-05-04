@@ -12,11 +12,11 @@
 
 #include "particle_emitter_base.hpp"
 
-class RainEmitterVB : public ParticleEmitterBase {
+class RainEmitterPR : public ParticleEmitterBase {
 public:
-	static std::shared_ptr<RainEmitterVB> createParticleEmitter(const ParticleEmitterConfig& config, VulkanBackend* backend);
-	explicit RainEmitterVB(const ParticleEmitterConfig& config, VulkanBackend* backend);
-	virtual ~RainEmitterVB();
+	static std::shared_ptr<RainEmitterPR> createParticleEmitter(const ParticleEmitterConfig& config, VulkanBackend* backend);
+	explicit RainEmitterPR(const ParticleEmitterConfig& config, VulkanBackend* backend);
+	virtual ~RainEmitterPR();
 	
 	virtual RecordCommandsResult renderFrame(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info) override;
 
@@ -34,4 +34,5 @@ private:
 
 	Buffer particle_vertex_buffer_;
 	Buffer particle_index_buffer_;
+	uint32_t index_count_;
 };
