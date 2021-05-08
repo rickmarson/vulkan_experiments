@@ -21,10 +21,6 @@ struct ParticleCompute {
         std::vector<size_t> offsets = { offsetof(ParticleCompute, pos),  offsetof(ParticleCompute, vel) };
         return { sizeof(ParticleCompute) , offsets };
     }
-
-    bool operator==(const ParticleCompute& other) const {
-        return pos == other.pos && vel == other.vel;
-    }
 };
 
 struct ParticleVertex {
@@ -33,10 +29,6 @@ struct ParticleVertex {
     static VertexFormatInfo getFormatInfo() {
         std::vector<size_t> offsets = { offsetof(ParticleVertex, pos) };
         return { sizeof(ParticleVertex) , offsets };
-    }
-
-    bool operator==(const ParticleVertex& other) const {
-        return pos == other.pos;
     }
 };
 

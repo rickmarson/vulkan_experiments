@@ -12,7 +12,7 @@ layout(location = 0) out vec4 out_colour;
 layout(location = 1) out vec2 out_uv;
 
 // in positions are in the camera view space
-const vec4 billboard_half_size = vec4(0.050, 0.075, 0.075, 0.075);
+const float half_size = 0.05;
 const vec4 top_left_u = vec4(0.0, 0.5, 0.0, 0.5);
 const vec4 top_left_v = vec4(0.0, 0.0, 0.5, 0.5);
 
@@ -21,7 +21,6 @@ void main() {
     for(int i = 0; i < gl_in.length(); ++i) {
         mat4 proj = in_proj[i];
         uint tex_idx = in_texture_idx[i];
-        float half_size = billboard_half_size[tex_idx];
         vec4 billboard_offset = vec4(0.0, -half_size, 0.0, 0.0);
         vec4 particle_pos = gl_in[i].gl_Position;
         vec4 pos = particle_pos + billboard_offset;

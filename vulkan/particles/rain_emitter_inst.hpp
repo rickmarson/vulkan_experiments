@@ -30,4 +30,8 @@ private:
 	virtual void createComputeDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) override;
 	virtual void updateComputeDescriptorSets(const DescriptorSetMetadata& metadata, std::shared_ptr<Texture>& scene_depth_buffer) override;
 	virtual RecordCommandsResult recordComputeCommands() override;
+
+	Buffer vertex_buffer_;
+	Buffer index_buffer_;
+	uint32_t instance_count_;
 };

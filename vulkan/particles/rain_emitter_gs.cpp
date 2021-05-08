@@ -21,10 +21,6 @@ struct ParticleVertex {
         std::vector<size_t> offsets = { offsetof(ParticleVertex, pos),  offsetof(ParticleVertex, vel) };
         return { sizeof(ParticleVertex) , offsets };
     }
-
-    bool operator==(const ParticleVertex& other) const {
-        return pos == other.pos && vel == other.vel;
-    }
 };
 
 const uint32_t PARTICLES_UNIFORM_SET_ID = 1;
@@ -55,7 +51,7 @@ RainEmitterGS::~RainEmitterGS() {
 }
 
 bool RainEmitterGS::createAssets(std::vector<Particle>& particles) {
-   auto src = (ParticleVertex*)particles.data();
+    auto src = (ParticleVertex*)particles.data();
     std::vector<ParticleVertex> particles_vertices(src, src+particles.size());
 
     particle_buffer_ = backend_->createVertexBuffer<ParticleVertex>(config_.name + "_particles", particles_vertices, false /*host_visible*/, true /*compute_visible*/);
