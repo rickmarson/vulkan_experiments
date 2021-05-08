@@ -27,9 +27,10 @@ void main() {
     out_colour = vec4(1.0, 1.0, 1.0, 1.0);
 
     uint texture_idx = 0;
-    if (in_position.w > 0.5) texture_idx = 1;
+    int vertex_idx_4 = gl_VertexIndex >> 2;
+    if (in_position.w > 0.5) texture_idx = 1 + vertex_idx_4 % 3;
 
-    int offset_idx = gl_VertexIndex - (gl_VertexIndex >> 2) * 4; 
+    int offset_idx = gl_VertexIndex - vertex_idx_4 * 4; 
     float u = top_left_u[texture_idx] + offsets_u[offset_idx];
     float v = top_left_v[texture_idx] + offsets_v[offset_idx];
     out_uv = vec2(u, v);

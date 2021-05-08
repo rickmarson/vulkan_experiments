@@ -32,7 +32,7 @@ void main() {
 
     out_colour = vec4(1.0, 1.0, 1.0, 1.0);
     int texture_idx = 0;
-    if (centre.w > 0.5) texture_idx = 1;
+    if (centre.w > 0.5) texture_idx = 1 + gl_InstanceIndex % 3;
 
     float u = top_left_u[texture_idx] + in_uv.x;
     float v = top_left_v[texture_idx] + in_uv.y;

@@ -26,5 +26,5 @@ void main() {
     out_colour = vec4(1.0, 1.0, 1.0, 1.0);
     out_proj = proj;
     out_texture_idx = 0;
-    if (in_position.w > 0.5) out_texture_idx = 1;
+    if (in_position.w > 0.5) out_texture_idx = 1 + gl_VertexIndex % 3;
 }
