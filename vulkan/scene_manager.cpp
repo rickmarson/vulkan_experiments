@@ -9,6 +9,7 @@
 #include "texture.hpp"
 #include "static_mesh.hpp"
 #include "shader_module.hpp"
+#include "pipelines/graphics_pipeline.hpp"
 
 #define TINYGLTF_IMPLEMENTATION
 #define TINYGLTF_NOEXCEPTION
@@ -168,26 +169,26 @@ namespace {
             if (node.translation.size() == 3) {
                 auto gltf_trans = glm::make_vec3(node.translation.data());
                 auto trans = glm::vec3(0.0f);
-                trans[0] = -gltf_trans[2];  // glTF "forward" is -Z, world "forward" is +X. Blender's "forward" is +Y
-                trans[1] = gltf_trans[0];
-                trans[2] = gltf_trans[1];
+                trans[0] = float(-gltf_trans[2]);  // glTF "forward" is -Z, world "forward" is +X. Blender's "forward" is +Y
+                trans[1] = float(gltf_trans[0]);
+                trans[2] = float(gltf_trans[1]);
                 translation = glm::translate(translation, trans);
             }
             if (node.rotation.size() == 4) {
                 auto gltf_rot = glm::make_quat(node.rotation.data());
                 glm::quat rot;
-                rot.x = -gltf_rot.z;  // glTF "forward" is -Z, world "forward" is +X. Blender's "forward" is +Y
-                rot.y = gltf_rot.x;
-                rot.z = gltf_rot.y;
-                rot.w = gltf_rot.w;
+                rot.x = float(-gltf_rot.z);  // glTF "forward" is -Z, world "forward" is +X. Blender's "forward" is +Y
+                rot.y = float(gltf_rot.x);
+                rot.z = float(gltf_rot.y);
+                rot.w = float(gltf_rot.w);
                 rotation = glm::mat4(rot);
             }
             if (node.scale.size() == 3) {
                 auto gltf_scale = glm::make_vec3(node.scale.data());
                 auto sc = glm::vec3(0.0f);
-                sc[0] = gltf_scale[2];
-                sc[1] = gltf_scale[0];
-                sc[2] = gltf_scale[1];
+                sc[0] = float(gltf_scale[2]);
+                sc[1] = float(gltf_scale[0]);
+                sc[2] = float(gltf_scale[1]);
                 scale = glm::scale(scale, sc);
             }
 
@@ -216,11 +217,11 @@ namespace {
         auto& node = model.nodes[scene.nodes[0]];
 
         if (node.scale.size() == 3) {
-            auto gltf_scale = glm::make_vec3(node.scale.data());
+            auto gltf_scale = glm::make_vec3((node.scale.data()));
             auto sc = glm::vec3(0.0f);
-            sc[0] = gltf_scale[2];
-            sc[1] = gltf_scale[0];
-            sc[2] = gltf_scale[1];
+            sc[0] = float(gltf_scale[2]);
+            sc[1] = float(gltf_scale[0]);
+            sc[2] = float(gltf_scale[1]);
 
             if (std::abs(sc[0] - sc[1]) > 1e-6 || std::abs(sc[1] - sc[2]) > 1e-6) {
                 std::cerr << "Error: non-uniform scaling is not supported!" << std::endl;
@@ -255,8 +256,8 @@ SceneManager::~SceneManager() {
     textures_.clear();
     if (shadows_enabled_) {
         backend_->destroyRenderPass(shadow_map_render_pass_);
-	    backend_->destroyPipeline(shadow_map_pipeline_);
         backend_->destroyUniformBuffer(shadow_map_data_buffer_);
+        shadow_map_pipeline_.reset();
     }
     vk_descriptor_sets_.clear();
     backend_->freeCommandBuffers(command_buffers_);
@@ -484,8 +485,9 @@ bool SceneManager::createGraphicsPipeline(const std::string& program_name, Rende
 
     scene_subpass_number_ = subpass_number;
 
+    scene_graphics_pipeline_ = backend_->createGraphicsPipeline(program_name);
+
     GraphicsPipelineConfig config;
-	config.name = program_name;
 	config.vertex = vertex_shader_;
 	config.fragment = fragment_shader_;
 	config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -495,13 +497,14 @@ bool SceneManager::createGraphicsPipeline(const std::string& program_name, Rende
 	config.render_pass = render_pass;
 	config.subpass_number = scene_subpass_number_;
 
-	scene_graphics_pipeline_ = backend_->createGraphicsPipeline(config);
+	if (scene_graphics_pipeline_->buildPipeline(config)) {
+        createUniforms();
+        createSceneDescriptorSets();
+        createGeometryDescriptorSets();
+        return true;
+    }
 
-	createUniforms();
-    createSceneDescriptorSets();
-	createGeometryDescriptorSets();
-
-	return scene_graphics_pipeline_.vk_pipeline != VK_NULL_HANDLE;
+	return false;
 }
 
 void SceneManager::prepareForRendering() {
@@ -547,13 +550,13 @@ RecordCommandsResult SceneManager::renderFrame(uint32_t swapchain_image, VkRende
         return makeRecordCommandsResult(false, command_buffers);
     }
 
-    bindSceneDescriptors(command_buffers[0], scene_graphics_pipeline_, swapchain_image);
+    bindSceneDescriptors(command_buffers[0], *scene_graphics_pipeline_, swapchain_image);
 
-	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, scene_graphics_pipeline_.vk_pipeline);
+	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, scene_graphics_pipeline_->handle());
 
 	backend_->writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 2); // does nothing if not in debug
 
-	drawGeometry(command_buffers[0], scene_graphics_pipeline_.vk_pipeline_layout, swapchain_image);
+	drawGeometry(command_buffers[0], scene_graphics_pipeline_->layout(), swapchain_image);
 
 	backend_->writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 3); // does nothing if not in debug
 
@@ -568,8 +571,8 @@ RecordCommandsResult SceneManager::renderFrame(uint32_t swapchain_image, VkRende
 void SceneManager::cleanupSwapChainAssets() {
     deleteUniforms();
     vk_descriptor_sets_.clear();
-    if (scene_graphics_pipeline_.vk_pipeline != VK_NULL_HANDLE) {
-	    backend_->destroyPipeline(scene_graphics_pipeline_);
+    if (scene_graphics_pipeline_) {
+        scene_graphics_pipeline_.reset();
     }
 }
 
@@ -598,18 +601,18 @@ void SceneManager::deleteUniforms() {
 
     if (shadows_enabled_) {
         backend_->destroyRenderPass(shadow_map_render_pass_);
-	    backend_->destroyPipeline(shadow_map_pipeline_);
 	    backend_->destroyUniformBuffer(shadow_map_data_buffer_);
+        shadow_map_pipeline_.reset();
         vk_shadow_descriptor_sets_.clear();
     }
 }
 
 void SceneManager::createSceneDescriptorSets() {
-    const auto& layout = scene_graphics_pipeline_.vk_descriptor_set_layouts.find(SCENE_UNIFORM_SET_ID)->second;
+    const auto& layout = scene_graphics_pipeline_->descriptorSets().find(SCENE_UNIFORM_SET_ID)->second;
     std::vector<VkDescriptorSetLayout> layouts(backend_->getSwapChainSize(), layout);
 
     if (shadows_enabled_) {
-        const auto& shadow_layout = scene_graphics_pipeline_.vk_descriptor_set_layouts.find(SHADOW_MAP_SET_ID)->second;
+        const auto& shadow_layout = scene_graphics_pipeline_->descriptorSets().find(SHADOW_MAP_SET_ID)->second;
         for (uint32_t i = 0; i < backend_->getSwapChainSize(); ++i) {
             layouts.push_back(shadow_layout);
         }
@@ -629,7 +632,7 @@ void SceneManager::createSceneDescriptorSets() {
 }
 
 void SceneManager::updateSceneDescriptorSets() {
-    const auto& bindings = scene_graphics_pipeline_.descriptor_metadata.set_bindings.find(SCENE_UNIFORM_SET_ID)->second;
+    const auto& bindings = scene_graphics_pipeline_->descriptorMetadata().set_bindings.find(SCENE_UNIFORM_SET_ID)->second;
     auto first = vk_descriptor_sets_.begin();
     auto last = vk_descriptor_sets_.begin() + backend_->getSwapChainSize();
     auto scene_descriptors = std::vector<VkDescriptorSet>(first, last);
@@ -667,7 +670,7 @@ void SceneManager::updateSceneDescriptorSets() {
     }
 
     if (shadows_enabled_) {
-        const auto& shadow_bindings = scene_graphics_pipeline_.descriptor_metadata.set_bindings.find(SHADOW_MAP_SET_ID)->second;
+        const auto& shadow_bindings = scene_graphics_pipeline_->descriptorMetadata().set_bindings.find(SHADOW_MAP_SET_ID)->second;
         first = vk_descriptor_sets_.begin() + backend_->getSwapChainSize();
         last = vk_descriptor_sets_.end();
         auto shadow_descriptors = std::vector<VkDescriptorSet>(first, last);
@@ -680,7 +683,7 @@ void SceneManager::createGeometryDescriptorSets() {
     // all pipelines that want to draw the scene geometry need to bind the same sets, so we only need to
     // generate them only once and they will be compatible with all pipelines
     for (auto& mesh : meshes_) {
-        mesh->createDescriptorSets(scene_graphics_pipeline_.vk_descriptor_set_layouts);
+        mesh->createDescriptorSets(scene_graphics_pipeline_->descriptorSets());
     }
 }
 
@@ -693,17 +696,17 @@ void SceneManager::updateGeometryDescriptorSets(const DescriptorSetMetadata& met
 
 void SceneManager::updateDescriptorSets() {
     updateSceneDescriptorSets();
-    updateGeometryDescriptorSets(scene_graphics_pipeline_.descriptor_metadata, true);
+    updateGeometryDescriptorSets(scene_graphics_pipeline_->descriptorMetadata(), true);
 }
 
-void SceneManager::bindSceneDescriptors(VkCommandBuffer& cmd_buffer, const Pipeline& pipeline, uint32_t swapchain_index) {
+void SceneManager::bindSceneDescriptors(VkCommandBuffer& cmd_buffer, const GraphicsPipeline& pipeline, uint32_t swapchain_index) {
     uint32_t scene_data_offset = swapchain_index;
 	// scene data
-	vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &vk_descriptor_sets_[scene_data_offset], 0, nullptr);
+	vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout(), SCENE_UNIFORM_SET_ID, 1, &vk_descriptor_sets_[scene_data_offset], 0, nullptr);
 	if (shadows_enabled_) {
         // shadow map data
         uint32_t shadow_map_offset = backend_->getSwapChainSize() + scene_data_offset;
-	    vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.vk_pipeline_layout, SHADOW_MAP_SET_ID, 1, &vk_descriptor_sets_[shadow_map_offset], 0, nullptr);
+	    vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout(), SHADOW_MAP_SET_ID, 1, &vk_descriptor_sets_[shadow_map_offset], 0, nullptr);
     }
 }
 
@@ -825,7 +828,6 @@ void SceneManager::setupShadowMapAssets() {
 	}
 
     GraphicsPipelineConfig config;
-	config.name = "Shadow Map Generation";
 	config.vertex = vertex_shader;
 	config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	config.cullBackFace = true;
@@ -834,16 +836,16 @@ void SceneManager::setupShadowMapAssets() {
 	config.render_pass = shadow_map_render_pass_;
 	config.subpass_number = 0;
 
-	shadow_map_pipeline_ = backend_->createGraphicsPipeline(config);
+	shadow_map_pipeline_ = backend_->createGraphicsPipeline( "Shadow Map Generation");
 
-    if (shadow_map_pipeline_.vk_pipeline == VK_NULL_HANDLE) {
+    if (!shadow_map_pipeline_->buildPipeline(config)) {
         std::cerr << " " << std::endl;
         return;
     }
 }
 
 void SceneManager::createShadowMapDescriptors() {
-    const auto& layout = shadow_map_pipeline_.vk_descriptor_set_layouts.find(SHADOW_MAP_DATA_UNIFORM_SET_ID)->second;
+    const auto& layout = shadow_map_pipeline_->descriptorSets().find(SHADOW_MAP_DATA_UNIFORM_SET_ID)->second;
     VkDescriptorSetAllocateInfo alloc_info{};
     alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     alloc_info.descriptorPool = backend_->getDescriptorPool();
@@ -865,9 +867,9 @@ void SceneManager::renderStaticShadowMap() {
 
     update();  // needed to load all the mesh uniforms
 
-    const auto& bindings = shadow_map_pipeline_.descriptor_metadata.set_bindings.find(SHADOW_MAP_DATA_UNIFORM_SET_ID)->second;
+    const auto& bindings = shadow_map_pipeline_->descriptorMetadata().set_bindings.find(SHADOW_MAP_DATA_UNIFORM_SET_ID)->second;
     backend_->updateDescriptorSets(shadow_map_data_buffer_, vk_shadow_descriptor_sets_, bindings.find(SHADOW_MAP_DATA_BINDING_NAME)->second);
-    updateGeometryDescriptorSets(shadow_map_pipeline_.descriptor_metadata, false /*no material*/);
+    updateGeometryDescriptorSets(shadow_map_pipeline_->descriptorMetadata(), false /*no material*/);
 
     auto cmd_buffer = backend_->beginSingleTimeCommands();
 
@@ -885,11 +887,11 @@ void SceneManager::renderStaticShadowMap() {
 	render_pass_info.pClearValues = clear_values.data();
 
 	vkCmdBeginRenderPass(cmd_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-	vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_map_pipeline_.vk_pipeline);
+	vkCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_map_pipeline_->handle());
 
-	vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_map_pipeline_.vk_pipeline_layout, SHADOW_MAP_DATA_UNIFORM_SET_ID, 1, &vk_shadow_descriptor_sets_[0], 0, nullptr);
+	vkCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadow_map_pipeline_->layout(), SHADOW_MAP_DATA_UNIFORM_SET_ID, 1, &vk_shadow_descriptor_sets_[0], 0, nullptr);
 
-	drawGeometry(cmd_buffer, shadow_map_pipeline_.vk_pipeline_layout, 0, false /*no material*/);
+	drawGeometry(cmd_buffer, shadow_map_pipeline_->layout(), 0, false /*no material*/);
 
     vkCmdEndRenderPass(cmd_buffer);
 

@@ -13,6 +13,8 @@
 class ShaderModule;
 class Texture;
 class StaticMesh;
+class GraphicsPipeline;
+class ComputePipeline;
 
 struct SubpassConfig {
     enum class DependencyType { NONE = 0, COLOUR_ATTACHMENT, FRAGMENT_SHADER, EARLY_FRAGMENT_TESTS, LATE_FRAGMENT_TESTS };
@@ -36,41 +38,6 @@ struct RenderPassConfig {
     bool has_depth = true;
     bool store_depth = false;
     std::vector<SubpassConfig> subpasses;
-};
-
-struct GraphicsPipelineConfig {
-    std::string name;
-    // shaders
-    std::shared_ptr<ShaderModule> vertex;
-    std::shared_ptr<ShaderModule> geometry;
-    std::shared_ptr<ShaderModule> fragment;
-    struct TessellationShaders {
-        std::shared_ptr<ShaderModule> control;
-        std::shared_ptr<ShaderModule> evaluation;
-
-        operator bool() const { return control && evaluation; }
-    }tessellation;
-    // vertex buffer desc
-    VkPrimitiveTopology topology;
-    VkVertexInputBindingDescription vertex_buffer_binding_desc;
-    std::vector<VkVertexInputAttributeDescription> vertex_buffer_attrib_desc;
-
-    // fixed function options
-    bool cullBackFace = true;
-    bool enableDepthTesting = true;
-    bool enableStencilTest = false;
-    bool enableTransparency = false;
-    bool showWireframe = false;
-    bool dynamicStates = false;
-    bool enablePrimitiveRestart = false;
-
-    RenderPass render_pass;
-    uint32_t subpass_number = 0;
-};
-
-struct ComputePipelineConfig {
-    std::string name;
-    std::shared_ptr<ShaderModule> compute;
 };
 
 // VulkanBackend
@@ -110,8 +77,8 @@ public:
     void freeCommandBuffers(std::vector<VkCommandBuffer>& cmd_buffers) const;
 
     RenderPass createRenderPass(const RenderPassConfig& config);
-    Pipeline createGraphicsPipeline(const GraphicsPipelineConfig& config);
-    Pipeline createComputePipeline(const ComputePipelineConfig& config);
+    std::unique_ptr<GraphicsPipeline> createGraphicsPipeline(const std::string& name);
+    std::unique_ptr<ComputePipeline> createComputePipeline(const std::string& name);
 
     template<typename DataType>
     Buffer createVertexBuffer(const std::string& name, const std::vector<DataType>& src_buffer, bool host_visible = false, bool compute_visible = false);
@@ -135,7 +102,6 @@ public:
 
     void destroyBuffer(Buffer& buffer);
     void destroyRenderPass(RenderPass& render_pass);
-    void destroyPipeline(Pipeline& graphics_pipeline);
     void destroyUniformBuffer(UniformBuffer& uniform_buffer);
     
     VkResult startNextFrame(uint32_t& next_swapchain_image, bool window_resized);
@@ -154,14 +120,6 @@ public:
 
 private:
     friend class Texture;
-
-    struct GraphicsPipelineLayoutInfo {
-        std::map<uint32_t, VkDescriptorSetLayout> descriptors_set_layouts;
-        std::vector<VkDescriptorSetLayout> descriptors_set_layouts_aux;  // contiguous memory block for passing to vulkan 
-        std::vector<VkPushConstantRange> push_constants_array;
-        DescriptorSetMetadata pipeline_descriptor_metadata;
-        PushConstantsMap push_constants_map;
-    };
 
     bool initVulkan();
     
@@ -186,8 +144,7 @@ private:
     VkDeviceMemory allocateDeviceMemory(VkMemoryRequirements mem_reqs, VkMemoryPropertyFlags properties);
     void copyBufferToGpuLocalMemory(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size);
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, uint32_t mip_levels = 1);
-    bool assembleGraphicsPipelineLayoutInfo(const GraphicsPipelineConfig& config, GraphicsPipelineLayoutInfo& layout_info);
-
+    
     VkPhysicalDevice getPhysicalDevice() const { return physical_device_; }
     std::vector<float> tryRetrieveTimestampQueries();
 
@@ -196,6 +153,7 @@ private:
     size_t current_frame_ = 0;  // total frame count since last swapchain reset
     VkExtent2D window_swap_extent_ = { 0, 0 };
     SwapChainSupportDetails swap_chain_support_;
+    bool mesh_shader_available_ = false;
 
     VkInstance vk_instance_ = VK_NULL_HANDLE;
     VkSurfaceKHR window_surface_ = VK_NULL_HANDLE;

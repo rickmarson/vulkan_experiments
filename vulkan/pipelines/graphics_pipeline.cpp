@@ -1,0 +1,266 @@
+/*
+* grahics_pipeline.cpp
+*
+* Copyright (C) 2021 Riccardo Marson
+*/
+
+#include "graphics_pipeline.hpp"
+#include "../shader_module.hpp"
+
+bool GraphicsPipeline::buildPipeline(const GraphicsPipelineConfig& config) {
+    GraphicsPipelineLayoutInfo layout_info;
+    if (!assembleGraphicsPipelineLayoutInfo(config, layout_info)) {
+        return false;
+    }
+    
+    VkPipelineShaderStageCreateInfo vert_shader_stage_info{};
+    vert_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vert_shader_stage_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vert_shader_stage_info.module = config.vertex->getShader();
+    vert_shader_stage_info.pName = "main";
+
+    std::vector<VkPipelineShaderStageCreateInfo> shader_stages = { vert_shader_stage_info };
+
+    if (config.fragment) {
+        VkPipelineShaderStageCreateInfo frag_shader_stage_info{};
+        frag_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        frag_shader_stage_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        frag_shader_stage_info.module = config.fragment->getShader();
+        frag_shader_stage_info.pName = "main";
+
+        shader_stages.push_back(frag_shader_stage_info);
+    }
+
+    if (config.tessellation) {
+        VkPipelineShaderStageCreateInfo tess_ctrl_shader_stage_info{};
+        tess_ctrl_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        tess_ctrl_shader_stage_info.stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+        tess_ctrl_shader_stage_info.module = config.tessellation.control->getShader();
+        tess_ctrl_shader_stage_info.pName = "main";
+
+        VkPipelineShaderStageCreateInfo tess_eval_shader_stage_info{};
+        tess_eval_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        tess_eval_shader_stage_info.stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+        tess_eval_shader_stage_info.module = config.tessellation.evaluation->getShader();
+        tess_eval_shader_stage_info.pName = "main";
+
+        shader_stages.push_back(tess_ctrl_shader_stage_info);
+        shader_stages.push_back(tess_eval_shader_stage_info);
+    }
+
+    if (config.geometry) {
+        VkPipelineShaderStageCreateInfo geometry_shader_stage_info{};
+        geometry_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        geometry_shader_stage_info.stage = VK_SHADER_STAGE_GEOMETRY_BIT;
+        geometry_shader_stage_info.module = config.geometry->getShader();
+        geometry_shader_stage_info.pName = "main";
+
+        shader_stages.push_back(geometry_shader_stage_info);
+    }
+    
+    return GraphicsPipelineBase::buildPipeline(config, layout_info, shader_stages);
+}
+
+bool GraphicsPipeline::assembleGraphicsPipelineLayoutInfo(const GraphicsPipelineConfig& config, GraphicsPipelineLayoutInfo& layout_info) {
+    // assemble layout information from all shaders
+    std::map<uint32_t, std::vector<VkDescriptorSetLayoutBinding>> layout_bindings_by_set;
+
+    const auto& vertex_layouts = config.vertex->getDescriptorSetLayouts();
+    for (const auto& layout : vertex_layouts) {
+        if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
+            layout_bindings_by_set[layout.id] = layout.layout_bindings;
+        }
+        else {
+            auto& bindings_array = layout_bindings_by_set[layout.id];
+            bindings_array.insert(bindings_array.begin(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+        }
+    }
+    const auto& vertex_descriptor_metadata = config.vertex->getDescriptorsMetadata();
+    for (const auto& meta : vertex_descriptor_metadata.set_bindings) {
+        layout_info.pipeline_descriptor_metadata.set_bindings[meta.first] = meta.second;
+    }
+
+    if (config.fragment) {
+        const auto& fragment_layouts = config.fragment->getDescriptorSetLayouts();
+        for (const auto& layout : fragment_layouts) {
+            if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
+                layout_bindings_by_set[layout.id] = layout.layout_bindings;
+            }
+            else {
+                auto& bindings_array = layout_bindings_by_set[layout.id];
+                bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+            }
+        }
+        const auto& fragment_descriptor_metadata = config.fragment->getDescriptorsMetadata();
+        for (const auto& meta : fragment_descriptor_metadata.set_bindings) {
+            auto& bindings_map = layout_info.pipeline_descriptor_metadata.set_bindings[meta.first];
+            for (const auto& src_binding : meta.second) {
+                bindings_map.insert(src_binding);
+            }
+        }
+    }
+
+    if (config.tessellation) {
+        // tessellation control
+        const auto& tess_ctrl_layouts = config.tessellation.control->getDescriptorSetLayouts();
+        for (const auto& layout : tess_ctrl_layouts) {
+            if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
+                layout_bindings_by_set[layout.id] = layout.layout_bindings;
+            }
+            else {
+                auto& bindings_array = layout_bindings_by_set[layout.id];
+                bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+            }
+        }
+        const auto& tess_ctrl_descriptor_metadata = config.tessellation.control->getDescriptorsMetadata();
+        for (const auto& meta : tess_ctrl_descriptor_metadata.set_bindings) {
+            auto& bindings_map = layout_info.pipeline_descriptor_metadata.set_bindings[meta.first];
+            for (const auto& src_binding : meta.second) {
+                bindings_map.insert(src_binding);
+            }
+        }
+
+        // tessellation evaluation
+        const auto& tess_eval_layouts = config.tessellation.evaluation->getDescriptorSetLayouts();
+        for (const auto& layout : tess_eval_layouts) {
+            if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
+                layout_bindings_by_set[layout.id] = layout.layout_bindings;
+            }
+            else {
+                auto& bindings_array = layout_bindings_by_set[layout.id];
+                bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+            }
+        }
+        const auto& tess_eval_descriptor_metadata = config.tessellation.evaluation->getDescriptorsMetadata();
+        for (const auto& meta : tess_eval_descriptor_metadata.set_bindings) {
+            auto& bindings_map = layout_info.pipeline_descriptor_metadata.set_bindings[meta.first];
+            for (const auto& src_binding : meta.second) {
+                bindings_map.insert(src_binding);
+            }
+        }
+    }
+
+    if (config.geometry) {
+        const auto& geom_layouts = config.geometry->getDescriptorSetLayouts();
+        for (const auto& layout : geom_layouts) {
+            if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
+                layout_bindings_by_set[layout.id] = layout.layout_bindings;
+            }
+            else {
+                auto& bindings_array = layout_bindings_by_set[layout.id];
+                bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
+            }
+        }
+        const auto& geom_descriptor_metadata = config.geometry->getDescriptorsMetadata();
+        for (const auto& meta : geom_descriptor_metadata.set_bindings) {
+            auto& bindings_map = layout_info.pipeline_descriptor_metadata.set_bindings[meta.first];
+            for (const auto& src_binding : meta.second) {
+                bindings_map.insert(src_binding);
+            }
+        }
+    }
+
+    // create descriptor layouts for all sets of binding points in the pipeline
+    std::map<uint32_t, std::vector< VkDescriptorSet>> descriptor_sets;
+    for (auto& set : layout_bindings_by_set) {
+        VkDescriptorSetLayoutCreateInfo layout_create_info{};
+        layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layout_create_info.bindingCount = static_cast<uint32_t>(set.second.size());
+        layout_create_info.pBindings = set.second.data();
+
+        VkDescriptorSetLayout descriptor_set_layout;
+        if (vkCreateDescriptorSetLayout(device_, &layout_create_info, nullptr, &descriptor_set_layout) != VK_SUCCESS) {
+            std::cerr << "Failed to create graphics pipeline descriptor set layout!" << std::endl;
+            return false;
+        }
+
+        layout_info.descriptors_set_layouts[set.first] = descriptor_set_layout;
+    }
+
+    // auxiliary array to make sure the layouts are ordered and contiguous in memory
+    for (auto& layout : layout_info.descriptors_set_layouts) {
+        layout_info.descriptors_set_layouts_aux.push_back(layout.second);
+    }
+
+    // assemble push constants  
+    auto compare = [](const PushConstantBlock& a, const PushConstantBlock& b) { return a.name < b.name; };
+    std::set<PushConstantBlock, decltype(compare)> push_constants_temp(compare);
+
+    const auto& vertex_push_constants = config.vertex->getPushConstants();
+
+    for (const auto& pc : vertex_push_constants) {
+        push_constants_temp.insert(pc);
+    }
+
+    if (config.fragment) {
+        const auto& fragment_push_constants = config.fragment->getPushConstants();
+        for (const auto& pc : fragment_push_constants) {
+            auto dst_iter = push_constants_temp.find(pc);
+            if (dst_iter == push_constants_temp.end()) {
+                push_constants_temp.insert(pc);
+            }
+            else {
+                auto new_block = *(dst_iter);
+                new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
+                push_constants_temp.erase(dst_iter);
+                push_constants_temp.insert(new_block);
+            }
+        }
+    }
+
+    if (config.tessellation) {
+        // tessellation control
+        const auto& tess_ctrl_push_constants = config.tessellation.control->getPushConstants();
+        for (const auto& pc : tess_ctrl_push_constants) {
+            auto dst_iter = push_constants_temp.find(pc);
+            if (dst_iter == push_constants_temp.end()) {
+                push_constants_temp.insert(pc);
+            }
+            else {
+                auto new_block = *(dst_iter);
+                new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
+                push_constants_temp.erase(dst_iter);
+                push_constants_temp.insert(new_block);
+            }
+        }
+
+        // tessellation evaluation
+        const auto& tess_eval_push_constants = config.tessellation.evaluation->getPushConstants();
+        for (const auto& pc : tess_eval_push_constants) {
+            auto dst_iter = push_constants_temp.find(pc);
+            if (dst_iter == push_constants_temp.end()) {
+                push_constants_temp.insert(pc);
+            }
+            else {
+                auto new_block = *(dst_iter);
+                new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
+                push_constants_temp.erase(dst_iter);
+                push_constants_temp.insert(new_block);
+            }
+        }
+    }
+
+    if (config.geometry) {
+        const auto& geom_push_constants = config.geometry->getPushConstants();
+        for (const auto& pc : geom_push_constants) {
+            auto dst_iter = push_constants_temp.find(pc);
+            if (dst_iter == push_constants_temp.end()) {
+                push_constants_temp.insert(pc);
+            }
+            else {
+                auto new_block = *(dst_iter);
+                new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
+                push_constants_temp.erase(dst_iter);
+                push_constants_temp.insert(new_block);
+            }
+        }
+    }
+
+    for (auto& pc : push_constants_temp) {
+        layout_info.push_constants_array.push_back(pc.push_constant_range);
+        layout_info.push_constants_map.insert({ pc.name, pc.push_constant_range });
+    }
+    push_constants_temp.clear();
+
+    return true;
+}

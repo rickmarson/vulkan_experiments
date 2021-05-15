@@ -54,7 +54,6 @@ private:
 	std::shared_ptr<ParticleEmitterBase> rain_drops_emitter_;
 	std::unique_ptr<SceneManager> scene_manager_;
 	RenderPass render_pass_;
-	Pipeline alley_graphics_pipeline_;
 
 	// options
 	float camera_fov_deg_ = 45.0f;

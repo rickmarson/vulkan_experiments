@@ -8,6 +8,8 @@
 #include "../texture.hpp"
 #include "../vulkan_backend.hpp"
 #include "../shader_module.hpp"
+#include "../pipelines/compute_pipeline.hpp"
+#include "../pipelines/graphics_pipeline.hpp"
 
 #include <glm/gtx/matrix_decompose.hpp>
 
@@ -22,8 +24,8 @@ ParticleEmitterBase::ParticleEmitterBase(const ParticleEmitterConfig& config, Vu
 ParticleEmitterBase::~ParticleEmitterBase() {
     vk_descriptor_sets_graphics_.clear();
     vk_descriptor_sets_compute_.clear();
-    backend_->destroyPipeline(compute_pipeline_);
-    backend_->destroyPipeline(graphics_pipeline_);
+    compute_pipeline_.reset();
+    graphics_pipeline_.reset();
     backend_->destroyBuffer(particle_buffer_);
     backend_->destroyBuffer(particle_respawn_buffer_);
     backend_->destroyUniformBuffer(graphics_view_proj_buffer_);
@@ -102,17 +104,20 @@ RecordCommandsResult ParticleEmitterBase::update(float delta_time_s,  const Scen
 }
 
 bool ParticleEmitterBase::createComputePipeline(std::shared_ptr<Texture>& scene_depth_buffer) {
-    if (compute_pipeline_.vk_pipeline != VK_NULL_HANDLE) {
-        backend_->destroyPipeline(compute_pipeline_);
+    if (compute_pipeline_) {
+        compute_pipeline_.reset();
     }
 
     ComputePipelineConfig config;
-    config.name = config_.name + "_cp";
     config.compute = compute_shader_;
-    compute_pipeline_ = backend_->createComputePipeline(config);
 
-    createComputeDescriptorSets(compute_pipeline_.vk_descriptor_set_layouts);
-    updateComputeDescriptorSets(compute_pipeline_.descriptor_metadata, scene_depth_buffer);
+    compute_pipeline_ = backend_->createComputePipeline("Emitter CP");
 
-    return compute_pipeline_.vk_pipeline != VK_NULL_HANDLE;
+    if (compute_pipeline_->buildPipeline(config)) {
+        createComputeDescriptorSets(compute_pipeline_->descriptorSets());
+        updateComputeDescriptorSets(compute_pipeline_->descriptorMetadata(), scene_depth_buffer);
+
+        return true;
+    }
+    return false;
 }

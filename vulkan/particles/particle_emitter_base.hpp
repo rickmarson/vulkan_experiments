@@ -8,10 +8,13 @@
 #pragma once
 
 #include "../common_definitions.hpp"
+#include "pipelines/pipeline.hpp"
 
 class Texture;
 class VulkanBackend;
 class ShaderModule;
+class ComputePipeline;
+class GraphicsPipeline;
 
 struct ParticleEmitterConfig {
 	std::string name;
@@ -87,8 +90,8 @@ protected:
 	ParticlesGlobalState global_state_pc_;
 
 	std::shared_ptr<ShaderModule> compute_shader_;
-	Pipeline compute_pipeline_;
-	Pipeline graphics_pipeline_;
+	std::unique_ptr<ComputePipeline> compute_pipeline_;
+	std::unique_ptr<GraphicsPipeline> graphics_pipeline_;
 	std::vector<VkCommandBuffer> compute_command_buffers_;
 	std::vector<VkCommandBuffer> graphics_command_buffers_; 
 };

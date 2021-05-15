@@ -8,6 +8,8 @@
 #include "shader_module.hpp"
 #include "texture.hpp"
 #include "static_mesh.hpp"
+#include "pipelines/graphics_pipeline.hpp"
+#include "pipelines/compute_pipeline.hpp"
 
 #include <optional>
 #include <algorithm>
@@ -21,8 +23,12 @@ namespace {
         "VK_LAYER_KHRONOS_validation"
     };
 
-    const std::vector<const char*> additional_required_ext = {
+    std::vector<const char*> required_device_ext = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
+    };
+
+    const std::vector<const char*> required_instance_ext = {
+        VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME
     };
 
 #ifdef NDEBUG
@@ -39,20 +45,6 @@ namespace {
             return graphics_family.has_value() && present_family.has_value();
         }
     };
-
-    void printSupportedExtensions() {
-        uint32_t extension_count = 0;
-        vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, nullptr);
-
-        std::vector<VkExtensionProperties> extensions(extension_count);
-        vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, extensions.data());
-
-        std::cout << "available extensions:" << std::endl;
-
-        for (const auto& extension : extensions) {
-            std::cout << '\t' << extension.extensionName << std::endl;
-        }
-    }
 
     bool checkValidationLayerSupport() {
         uint32_t layer_count;
@@ -79,20 +71,62 @@ namespace {
         return true;
     }
 
-    bool checkAdditionalRequiredExtensionsSupport(VkPhysicalDevice device) {
+    bool checkRequiredDeviceExtensions(VkPhysicalDevice device) {
+        uint32_t extension_count = 0;
+        vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count, nullptr);
+
+        std::vector<VkExtensionProperties> available_extensions(extension_count);
+        vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count, available_extensions.data());
+
+        std::set<std::string> required_extensions(required_device_ext.begin(), required_device_ext.end());
+
+        std::cout << "Available Device Extensions:" << std::endl;
+
+        for (const auto& extension : available_extensions) {
+            std::cout << '\t' << extension.extensionName << std::endl;
+
+            required_extensions.erase(extension.extensionName);
+        }
+
+        return required_extensions.empty();
+    }
+
+    bool checkRequiredInstanceExtensions(VkPhysicalDevice device) {
+        uint32_t extension_count = 0;
+        vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, nullptr);
+
+        std::vector<VkExtensionProperties> instance_extensions(extension_count);
+        vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, instance_extensions.data());
+
+        std::set<std::string> required_extensions(required_instance_ext.begin(), required_instance_ext.end());
+
+        std::cout << "Available Instance Extensions:" << std::endl;
+
+        for (const auto& extension : instance_extensions) {
+            std::cout << '\t' << extension.extensionName << std::endl;
+
+            required_extensions.erase(extension.extensionName);
+        }
+
+        return required_extensions.empty();
+    }
+
+    bool checkMeshShaderSupport(VkPhysicalDevice device) {
         uint32_t extension_count;
         vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count, nullptr);
 
         std::vector<VkExtensionProperties> available_extensions(extension_count);
         vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count, available_extensions.data());
 
-        std::set<std::string> required_extensions(additional_required_ext.begin(), additional_required_ext.end());
-
-        for (const auto& extension : available_extensions) {
-            required_extensions.erase(extension.extensionName);
+        if (std::find_if(available_extensions.begin(), 
+                                    available_extensions.end(), 
+                                    [](const VkExtensionProperties& p) { return std::string(p.extensionName) == VK_NV_MESH_SHADER_EXTENSION_NAME; }) 
+                                != available_extensions.end()) {
+            required_device_ext.push_back(VK_NV_MESH_SHADER_EXTENSION_NAME);
+            return true;      
         }
 
-        return required_extensions.empty();
+        return false;
     }
 
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR window_surface) {
@@ -215,8 +249,6 @@ namespace {
 // VulkanBackend
 
 bool VulkanBackend::createInstance(uint32_t required_extensions_count, const char** required_extensions, VkInstance& instance_out) {
-    printSupportedExtensions();
-
     if (enable_validation_layers && !checkValidationLayerSupport()) {
         std::cerr << "validation layers requested, but not available!" << std::endl;
         return false;
@@ -625,291 +657,12 @@ RenderPass VulkanBackend::createRenderPass(const RenderPassConfig& config) {
     return render_pass;
 }
 
-Pipeline VulkanBackend::createGraphicsPipeline(const GraphicsPipelineConfig& config) {
-    GraphicsPipelineLayoutInfo layout_info;
-    if (!assembleGraphicsPipelineLayoutInfo(config, layout_info)) {
-        return Pipeline{};
-    }
-    
-    VkPipelineShaderStageCreateInfo vert_shader_stage_info{};
-    vert_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vert_shader_stage_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vert_shader_stage_info.module = config.vertex->getShader();
-    vert_shader_stage_info.pName = "main";
-
-    std::vector<VkPipelineShaderStageCreateInfo> shader_stages = { vert_shader_stage_info };
-
-    if (config.fragment) {
-        VkPipelineShaderStageCreateInfo frag_shader_stage_info{};
-        frag_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        frag_shader_stage_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-        frag_shader_stage_info.module = config.fragment->getShader();
-        frag_shader_stage_info.pName = "main";
-
-        shader_stages.push_back(frag_shader_stage_info);
-    }
-
-    if (config.tessellation) {
-        VkPipelineShaderStageCreateInfo tess_ctrl_shader_stage_info{};
-        tess_ctrl_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        tess_ctrl_shader_stage_info.stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-        tess_ctrl_shader_stage_info.module = config.tessellation.control->getShader();
-        tess_ctrl_shader_stage_info.pName = "main";
-
-        VkPipelineShaderStageCreateInfo tess_eval_shader_stage_info{};
-        tess_eval_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        tess_eval_shader_stage_info.stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-        tess_eval_shader_stage_info.module = config.tessellation.evaluation->getShader();
-        tess_eval_shader_stage_info.pName = "main";
-
-        shader_stages.push_back(tess_ctrl_shader_stage_info);
-        shader_stages.push_back(tess_eval_shader_stage_info);
-    }
-
-    if (config.geometry) {
-        VkPipelineShaderStageCreateInfo geometry_shader_stage_info{};
-        geometry_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        geometry_shader_stage_info.stage = VK_SHADER_STAGE_GEOMETRY_BIT;
-        geometry_shader_stage_info.module = config.geometry->getShader();
-        geometry_shader_stage_info.pName = "main";
-
-        shader_stages.push_back(geometry_shader_stage_info);
-    }
-    // fixed functionality configuration
-
-    VkPipelineVertexInputStateCreateInfo vertex_input_info{};
-    vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex_input_info.vertexBindingDescriptionCount = 1;
-    vertex_input_info.pVertexBindingDescriptions = &config.vertex_buffer_binding_desc;
-    vertex_input_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(config.vertex_buffer_attrib_desc.size());
-    vertex_input_info.pVertexAttributeDescriptions = config.vertex_buffer_attrib_desc.data();
-
-    VkPipelineInputAssemblyStateCreateInfo input_assembly{};
-    input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    input_assembly.topology = config.topology;
-    input_assembly.primitiveRestartEnable = config.enablePrimitiveRestart ? VK_TRUE : VK_FALSE;
-
-    VkPipelineViewportStateCreateInfo viewport_state{};
-    viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewport_state.viewportCount = 1;
-    viewport_state.pViewports = &config.render_pass.viewport;
-    viewport_state.scissorCount = 1;
-    viewport_state.pScissors = &config.render_pass.scissor;
-
-    VkPipelineRasterizationStateCreateInfo rasterizer{};
-    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.depthClampEnable = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode = config.showWireframe ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
-    rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = config.cullBackFace ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    rasterizer.depthBiasEnable = VK_FALSE;
-    rasterizer.depthBiasConstantFactor = 0.0f; // Optional
-    rasterizer.depthBiasClamp = 0.0f; // Optional
-    rasterizer.depthBiasSlopeFactor = 0.0f; // Optional
-
-    VkPipelineMultisampleStateCreateInfo multisampling{};
-    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.sampleShadingEnable = VK_TRUE;
-    multisampling.rasterizationSamples = config.render_pass.msaa_samples;
-    multisampling.minSampleShading = 0.2f;
-    multisampling.pSampleMask = nullptr; // Optional
-    multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
-    multisampling.alphaToOneEnable = VK_FALSE; // Optional
-
-    VkPipelineColorBlendAttachmentState color_blend_attachment{};
-    color_blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    color_blend_attachment.blendEnable = config.enableTransparency ? VK_TRUE : VK_FALSE;
-    color_blend_attachment.srcColorBlendFactor = config.enableTransparency ? VK_BLEND_FACTOR_SRC_ALPHA : VK_BLEND_FACTOR_ONE;
-    color_blend_attachment.dstColorBlendFactor = config.enableTransparency ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : VK_BLEND_FACTOR_ZERO;
-    color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD; 
-    color_blend_attachment.srcAlphaBlendFactor = config.enableTransparency ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : VK_BLEND_FACTOR_ONE;
-    color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO; 
-    color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD; 
-
-    VkPipelineColorBlendStateCreateInfo color_blending{};
-    color_blending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    color_blending.logicOpEnable = VK_FALSE;
-    color_blending.logicOp = VK_LOGIC_OP_COPY; // Optional
-    color_blending.attachmentCount = 1;
-    color_blending.pAttachments = &color_blend_attachment;
-    color_blending.blendConstants[0] = 0.0f; // Optional
-    color_blending.blendConstants[1] = 0.0f; // Optional
-    color_blending.blendConstants[2] = 0.0f; // Optional
-    color_blending.blendConstants[3] = 0.0f; // Optional
-
-    VkPipelineDepthStencilStateCreateInfo depth_stencil{};
-    depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depth_stencil.depthTestEnable = config.enableDepthTesting ? VK_TRUE : VK_FALSE;
-    depth_stencil.depthWriteEnable = config.enableDepthTesting ? VK_TRUE : VK_FALSE;
-    depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS;
-    depth_stencil.depthBoundsTestEnable = VK_FALSE;
-    depth_stencil.minDepthBounds = 0.0f; // Optional
-    depth_stencil.maxDepthBounds = 1.0f; // Optional
-    depth_stencil.stencilTestEnable = config.enableStencilTest ? VK_TRUE : VK_FALSE;
-    depth_stencil.front = {}; // Optional
-    depth_stencil.back = {}; // Optional
-
-    std::array<VkDynamicState, 2> dynamic_states = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-
-    VkPipelineDynamicStateCreateInfo dynamic_state_info{};
-    dynamic_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamic_state_info.pNext = nullptr;
-    dynamic_state_info.flags = 0;
-    dynamic_state_info.dynamicStateCount = config.dynamicStates ? 2 : 0;
-    dynamic_state_info.pDynamicStates = config.dynamicStates ? dynamic_states.data() : nullptr;
-
-    VkPipelineLayoutCreateInfo pipeline_layout_info{};
-    pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(layout_info.descriptors_set_layouts_aux.size());
-    pipeline_layout_info.pSetLayouts = layout_info.descriptors_set_layouts_aux.data();
-    pipeline_layout_info.pushConstantRangeCount = uint32_t(layout_info.push_constants_array.size());
-    pipeline_layout_info.pPushConstantRanges = layout_info.push_constants_array.size() > 0 ? layout_info.push_constants_array.data() : nullptr;
-
-    VkPipelineLayout pipeline_layout;
-    if (vkCreatePipelineLayout(device_, &pipeline_layout_info, nullptr, &pipeline_layout) != VK_SUCCESS) {
-        std::cerr << "Failed to create graphics pipeline layout!" << std::endl;
-        return Pipeline{};
-    }
-
-    VkGraphicsPipelineCreateInfo pipeline_info{};
-    pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipeline_info.stageCount = static_cast<uint32_t>(shader_stages.size());
-    pipeline_info.pStages = shader_stages.data();
-    pipeline_info.pVertexInputState = &vertex_input_info;
-    pipeline_info.pInputAssemblyState = &input_assembly;
-    pipeline_info.pViewportState = &viewport_state;
-    pipeline_info.pRasterizationState = &rasterizer;
-    pipeline_info.pMultisampleState = &multisampling;
-    pipeline_info.pDepthStencilState = &depth_stencil;
-    pipeline_info.pColorBlendState = &color_blending;
-    pipeline_info.pDynamicState = &dynamic_state_info;
-    pipeline_info.layout = pipeline_layout;
-    pipeline_info.renderPass = config.render_pass.vk_render_pass;
-    pipeline_info.subpass = config.subpass_number;
-    pipeline_info.basePipelineHandle = VK_NULL_HANDLE; // Optional
-    pipeline_info.basePipelineIndex = -1; // Optional
-    
-    VkPipeline vk_pipeline;
-    if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &vk_pipeline) != VK_SUCCESS) {
-        std::cerr << "Failed to create Graphics pipeline!" << std::endl;
-        return Pipeline{};
-    }
-
-    Pipeline graphics_pipeline{ 
-        config.name, 
-        PipelineType::GRAPHICS,
-        pipeline_layout, 
-        vk_pipeline,
-        std::move(layout_info.descriptors_set_layouts),
-        std::move(layout_info.pipeline_descriptor_metadata),
-        std::move(layout_info.push_constants_map)
-    };
-
-    return graphics_pipeline;
+ std::unique_ptr<GraphicsPipeline> VulkanBackend::createGraphicsPipeline(const std::string& name) {
+   return std::unique_ptr<GraphicsPipeline>(new GraphicsPipeline(device_, name));
 }
 
-Pipeline VulkanBackend::createComputePipeline(const ComputePipelineConfig& config) {
-    if (!config.compute) {
-        return Pipeline{};
-    }
-
-    DescriptorSetMetadata pipeline_descriptor_metadata;
-    std::map<uint32_t, std::vector<VkDescriptorSetLayoutBinding>> layout_bindings_by_set;
-    const auto& compute_layouts = config.compute->getDescriptorSetLayouts();
-    for (const auto& layout : compute_layouts) {
-        if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
-            layout_bindings_by_set[layout.id] = layout.layout_bindings;
-        }
-        else {
-            auto& bindings_array = layout_bindings_by_set[layout.id];
-            bindings_array.insert(bindings_array.begin(), layout.layout_bindings.begin(), layout.layout_bindings.end());
-        }
-    }
-    const auto& compute_descriptor_metadata = config.compute->getDescriptorsMetadata();
-    for (const auto& meta : compute_descriptor_metadata.set_bindings) {
-        pipeline_descriptor_metadata.set_bindings[meta.first] = meta.second;
-    }
-
-    // create descriptor layouts for all sets of binding points in the pipeline
-    std::map<uint32_t, VkDescriptorSetLayout> descriptors_set_layouts;
-    std::map<uint32_t, std::vector< VkDescriptorSet>> descriptor_sets;
-    for (auto& set : layout_bindings_by_set) {
-        VkDescriptorSetLayoutCreateInfo layout_create_info{};
-        layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layout_create_info.bindingCount = static_cast<uint32_t>(set.second.size());
-        layout_create_info.pBindings = set.second.data();
-
-        VkDescriptorSetLayout descriptor_set_layout;
-        if (vkCreateDescriptorSetLayout(device_, &layout_create_info, nullptr, &descriptor_set_layout) != VK_SUCCESS) {
-            std::cerr << "Failed to create compute pipeline descriptor set layout!" << std::endl;
-            return Pipeline{};
-        }
-
-        descriptors_set_layouts[set.first] = descriptor_set_layout;
-    }
-
-    // auxiliary array to make sure the layouts are ordered and contiguous in memory
-    std::vector<VkDescriptorSetLayout> descriptors_set_layouts_aux;
-    for (auto& layout : descriptors_set_layouts) {
-        descriptors_set_layouts_aux.push_back(layout.second);
-    }
-
-    // assemble push constants 
-    std::vector<VkPushConstantRange> push_constants_array;
-    auto& compute_push_constants = config.compute->getPushConstants();
-    PushConstantsMap push_constants_map;
-    for (auto& pc : compute_push_constants) {
-        push_constants_array.push_back(pc.push_constant_range);
-        push_constants_map.insert({ pc.name, pc.push_constant_range });
-    }
-
-    VkPipelineLayoutCreateInfo pipeline_layout_info{};
-    pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(descriptors_set_layouts_aux.size());
-    pipeline_layout_info.pSetLayouts = descriptors_set_layouts_aux.data();
-    pipeline_layout_info.pushConstantRangeCount = uint32_t(push_constants_array.size());
-    pipeline_layout_info.pPushConstantRanges = push_constants_array.size() > 0 ? push_constants_array.data() : nullptr;
-
-    VkPipelineLayout pipeline_layout;
-    if (vkCreatePipelineLayout(device_, &pipeline_layout_info, nullptr, &pipeline_layout) != VK_SUCCESS) {
-        std::cerr << "Failed to create compute pipeline layout!" << std::endl;
-        return Pipeline{};
-    }
-
-    VkPipelineShaderStageCreateInfo compute_shader_stage_info{};
-    compute_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    compute_shader_stage_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    compute_shader_stage_info.module = config.compute->getShader();
-    compute_shader_stage_info.pName = "main";
-
-    VkComputePipelineCreateInfo create_info{};
-    create_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    create_info.pNext = nullptr;
-    create_info.flags = 0;
-    create_info.stage = compute_shader_stage_info;
-    create_info.layout = pipeline_layout;
-    create_info.basePipelineHandle = VK_NULL_HANDLE;
-    create_info.basePipelineIndex = -1;
-
-    VkPipeline vk_pipeline;
-    if (vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &create_info, nullptr, &vk_pipeline) != VK_SUCCESS) {
-        std::cerr << "Failed to create Compute pipeline!" << std::endl;
-        return Pipeline{};
-    }
-
-    Pipeline compute_pipeline{
-        config.name,
-        PipelineType::COMPUTE,
-        pipeline_layout,
-        vk_pipeline,
-        std::move(descriptors_set_layouts),
-        std::move(pipeline_descriptor_metadata),
-        std::move(push_constants_map)
-    };
-
-    return compute_pipeline;
+std::unique_ptr<ComputePipeline> VulkanBackend::createComputePipeline(const std::string& name) {
+    return std::unique_ptr<ComputePipeline>(new ComputePipeline(device_, name));
 }
 
 VkResult VulkanBackend::startNextFrame(uint32_t& swapchain_image, bool window_resized) {
@@ -1169,8 +922,9 @@ bool VulkanBackend::selectDevice() {
 
     for (const auto& device : devices) {
         if (isDeviceSuitable(device)) {
-            physical_device_ = device;  // fairly confident there's only one discrete GPU in our use case
+            physical_device_ = device;
             max_msaa_samples_ = getMaxSupportedSampleCount(device);
+            mesh_shader_available_ = checkMeshShaderSupport(device);
             break;
         }
     }
@@ -1196,8 +950,8 @@ bool VulkanBackend::isDeviceSuitable(VkPhysicalDevice device) {
 
     QueueFamilyIndices indices = findQueueFamilies(device, window_surface_);
 
-    bool extensions_supported = checkAdditionalRequiredExtensionsSupport(device);
-
+    bool extensions_supported = checkRequiredDeviceExtensions(device) && checkRequiredInstanceExtensions(device);
+   
     bool swap_chain_adequate = false;
     if (extensions_supported) {
         SwapChainSupportDetails swap_chain_support = querySwapChainSupport(device, window_surface_);
@@ -1233,11 +987,6 @@ bool VulkanBackend::createLogicalDevice() {
     device_features.sampleRateShading = VK_TRUE;
     device_features.geometryShader = VK_TRUE;
     device_features.fragmentStoresAndAtomics = VK_TRUE;
-    
-    /*VkPhysicalDeviceSeparateDepthStencilLayoutsFeatures additional_features{};
-    additional_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES;
-    additional_features.pNext = nullptr;
-    additional_features.separateDepthStencilLayouts = true;*/
 
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -1245,8 +994,8 @@ bool VulkanBackend::createLogicalDevice() {
     create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size());
     create_info.pQueueCreateInfos = queue_create_infos.data();
     create_info.pEnabledFeatures = &device_features;
-    create_info.enabledExtensionCount = static_cast<uint32_t>(additional_required_ext.size());
-    create_info.ppEnabledExtensionNames = additional_required_ext.data();
+    create_info.enabledExtensionCount = static_cast<uint32_t>(required_device_ext.size());
+    create_info.ppEnabledExtensionNames = required_device_ext.data();
 
     if (enable_validation_layers) {
         create_info.enabledLayerCount = static_cast<uint32_t>(validation_layers.size()); // should be ignored by recent implementations
@@ -1256,8 +1005,9 @@ bool VulkanBackend::createLogicalDevice() {
         create_info.enabledLayerCount = 0;
     }
 
-    if (vkCreateDevice(physical_device_, &create_info, nullptr, &device_) != VK_SUCCESS) {
-        std::cerr << "failed to create logical device!" << std::endl;
+    VkResult result = vkCreateDevice(physical_device_, &create_info, nullptr, &device_);
+    if (result != VK_SUCCESS) {
+        std::cerr << "failed to create logical device! Result="  << result << std::endl;
         return false;
     }
 
@@ -1595,17 +1345,6 @@ void VulkanBackend::destroyRenderPass(RenderPass& render_pass) {
     render_pass = RenderPass{};
 }
 
-void VulkanBackend::destroyPipeline(Pipeline& graphics_pipeline) {
-    for (auto& descr_set_layout : graphics_pipeline.vk_descriptor_set_layouts) {
-        vkDestroyDescriptorSetLayout(device_, descr_set_layout.second, nullptr);
-    }
-    
-    vkDestroyPipeline(device_, graphics_pipeline.vk_pipeline, nullptr);
-    vkDestroyPipelineLayout(device_, graphics_pipeline.vk_pipeline_layout, nullptr);
-    graphics_pipeline.vk_descriptor_set_layouts.clear();
-    graphics_pipeline = Pipeline{};
-}
-
 void VulkanBackend::destroyUniformBuffer(UniformBuffer& uniform_buffer) {
     for (auto& buffer : uniform_buffer.buffers) {
         vkDestroyBuffer(device_, buffer.vk_buffer, nullptr);
@@ -1639,210 +1378,6 @@ VkImageView VulkanBackend::createImageView(VkImage image, VkFormat format, VkIma
     }
 
     return image_view;
-}
-
-bool VulkanBackend::assembleGraphicsPipelineLayoutInfo(const GraphicsPipelineConfig& config, GraphicsPipelineLayoutInfo& layout_info) {
-    // assemble layout information from all shaders
-    std::map<uint32_t, std::vector<VkDescriptorSetLayoutBinding>> layout_bindings_by_set;
-
-    const auto& vertex_layouts = config.vertex->getDescriptorSetLayouts();
-    for (const auto& layout : vertex_layouts) {
-        if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
-            layout_bindings_by_set[layout.id] = layout.layout_bindings;
-        }
-        else {
-            auto& bindings_array = layout_bindings_by_set[layout.id];
-            bindings_array.insert(bindings_array.begin(), layout.layout_bindings.begin(), layout.layout_bindings.end());
-        }
-    }
-    const auto& vertex_descriptor_metadata = config.vertex->getDescriptorsMetadata();
-    for (const auto& meta : vertex_descriptor_metadata.set_bindings) {
-        layout_info.pipeline_descriptor_metadata.set_bindings[meta.first] = meta.second;
-    }
-
-    if (config.fragment) {
-        const auto& fragment_layouts = config.fragment->getDescriptorSetLayouts();
-        for (const auto& layout : fragment_layouts) {
-            if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
-                layout_bindings_by_set[layout.id] = layout.layout_bindings;
-            }
-            else {
-                auto& bindings_array = layout_bindings_by_set[layout.id];
-                bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
-            }
-        }
-        const auto& fragment_descriptor_metadata = config.fragment->getDescriptorsMetadata();
-        for (const auto& meta : fragment_descriptor_metadata.set_bindings) {
-            auto& bindings_map = layout_info.pipeline_descriptor_metadata.set_bindings[meta.first];
-            for (const auto& src_binding : meta.second) {
-                bindings_map.insert(src_binding);
-            }
-        }
-    }
-
-    if (config.tessellation) {
-        // tessellation control
-        const auto& tess_ctrl_layouts = config.tessellation.control->getDescriptorSetLayouts();
-        for (const auto& layout : tess_ctrl_layouts) {
-            if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
-                layout_bindings_by_set[layout.id] = layout.layout_bindings;
-            }
-            else {
-                auto& bindings_array = layout_bindings_by_set[layout.id];
-                bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
-            }
-        }
-        const auto& tess_ctrl_descriptor_metadata = config.tessellation.control->getDescriptorsMetadata();
-        for (const auto& meta : tess_ctrl_descriptor_metadata.set_bindings) {
-            auto& bindings_map = layout_info.pipeline_descriptor_metadata.set_bindings[meta.first];
-            for (const auto& src_binding : meta.second) {
-                bindings_map.insert(src_binding);
-            }
-        }
-
-        // tessellation evaluation
-        const auto& tess_eval_layouts = config.tessellation.evaluation->getDescriptorSetLayouts();
-        for (const auto& layout : tess_eval_layouts) {
-            if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
-                layout_bindings_by_set[layout.id] = layout.layout_bindings;
-            }
-            else {
-                auto& bindings_array = layout_bindings_by_set[layout.id];
-                bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
-            }
-        }
-        const auto& tess_eval_descriptor_metadata = config.tessellation.evaluation->getDescriptorsMetadata();
-        for (const auto& meta : tess_eval_descriptor_metadata.set_bindings) {
-            auto& bindings_map = layout_info.pipeline_descriptor_metadata.set_bindings[meta.first];
-            for (const auto& src_binding : meta.second) {
-                bindings_map.insert(src_binding);
-            }
-        }
-    }
-
-    if (config.geometry) {
-        const auto& geom_layouts = config.geometry->getDescriptorSetLayouts();
-        for (const auto& layout : geom_layouts) {
-            if (layout_bindings_by_set.find(layout.id) == layout_bindings_by_set.end()) {
-                layout_bindings_by_set[layout.id] = layout.layout_bindings;
-            }
-            else {
-                auto& bindings_array = layout_bindings_by_set[layout.id];
-                bindings_array.insert(bindings_array.end(), layout.layout_bindings.begin(), layout.layout_bindings.end());
-            }
-        }
-        const auto& geom_descriptor_metadata = config.geometry->getDescriptorsMetadata();
-        for (const auto& meta : geom_descriptor_metadata.set_bindings) {
-            auto& bindings_map = layout_info.pipeline_descriptor_metadata.set_bindings[meta.first];
-            for (const auto& src_binding : meta.second) {
-                bindings_map.insert(src_binding);
-            }
-        }
-    }
-
-    // create descriptor layouts for all sets of binding points in the pipeline
-    std::map<uint32_t, std::vector< VkDescriptorSet>> descriptor_sets;
-    for (auto& set : layout_bindings_by_set) {
-        VkDescriptorSetLayoutCreateInfo layout_create_info{};
-        layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layout_create_info.bindingCount = static_cast<uint32_t>(set.second.size());
-        layout_create_info.pBindings = set.second.data();
-
-        VkDescriptorSetLayout descriptor_set_layout;
-        if (vkCreateDescriptorSetLayout(device_, &layout_create_info, nullptr, &descriptor_set_layout) != VK_SUCCESS) {
-            std::cerr << "Failed to create graphics pipeline descriptor set layout!" << std::endl;
-            return false;
-        }
-
-        layout_info.descriptors_set_layouts[set.first] = descriptor_set_layout;
-    }
-
-    // auxiliary array to make sure the layouts are ordered and contiguous in memory
-    for (auto& layout : layout_info.descriptors_set_layouts) {
-        layout_info.descriptors_set_layouts_aux.push_back(layout.second);
-    }
-
-    // assemble push constants  
-    auto compare = [](const PushConstantBlock& a, const PushConstantBlock& b) { return a.name < b.name; };
-    std::set<PushConstantBlock, decltype(compare)> push_constants_temp(compare);
-
-    const auto& vertex_push_constants = config.vertex->getPushConstants();
-
-    for (const auto& pc : vertex_push_constants) {
-        push_constants_temp.insert(pc);
-    }
-
-    if (config.fragment) {
-        const auto& fragment_push_constants = config.fragment->getPushConstants();
-        for (const auto& pc : fragment_push_constants) {
-            auto dst_iter = push_constants_temp.find(pc);
-            if (dst_iter == push_constants_temp.end()) {
-                push_constants_temp.insert(pc);
-            }
-            else {
-                auto new_block = *(dst_iter);
-                new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
-                push_constants_temp.erase(dst_iter);
-                push_constants_temp.insert(new_block);
-            }
-        }
-    }
-
-    if (config.tessellation) {
-        // tessellation control
-        const auto& tess_ctrl_push_constants = config.tessellation.control->getPushConstants();
-        for (const auto& pc : tess_ctrl_push_constants) {
-            auto dst_iter = push_constants_temp.find(pc);
-            if (dst_iter == push_constants_temp.end()) {
-                push_constants_temp.insert(pc);
-            }
-            else {
-                auto new_block = *(dst_iter);
-                new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
-                push_constants_temp.erase(dst_iter);
-                push_constants_temp.insert(new_block);
-            }
-        }
-
-        // tessellation evaluation
-        const auto& tess_eval_push_constants = config.tessellation.evaluation->getPushConstants();
-        for (const auto& pc : tess_eval_push_constants) {
-            auto dst_iter = push_constants_temp.find(pc);
-            if (dst_iter == push_constants_temp.end()) {
-                push_constants_temp.insert(pc);
-            }
-            else {
-                auto new_block = *(dst_iter);
-                new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
-                push_constants_temp.erase(dst_iter);
-                push_constants_temp.insert(new_block);
-            }
-        }
-    }
-
-    if (config.geometry) {
-        const auto& geom_push_constants = config.geometry->getPushConstants();
-        for (const auto& pc : geom_push_constants) {
-            auto dst_iter = push_constants_temp.find(pc);
-            if (dst_iter == push_constants_temp.end()) {
-                push_constants_temp.insert(pc);
-            }
-            else {
-                auto new_block = *(dst_iter);
-                new_block.push_constant_range.stageFlags |= pc.push_constant_range.stageFlags;
-                push_constants_temp.erase(dst_iter);
-                push_constants_temp.insert(new_block);
-            }
-        }
-    }
-
-    for (auto& pc : push_constants_temp) {
-        layout_info.push_constants_array.push_back(pc.push_constant_range);
-        layout_info.push_constants_map.insert({ pc.name, pc.push_constant_range });
-    }
-    push_constants_temp.clear();
-
-    return true;
 }
 
 std::vector<float> VulkanBackend::tryRetrieveTimestampQueries() {

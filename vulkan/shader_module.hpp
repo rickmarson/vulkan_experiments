@@ -8,6 +8,7 @@
 #pragma once
 
 #include "common_definitions.hpp"
+#include "pipelines/pipeline.hpp"
 
 struct SpvReflectShaderModule;
 

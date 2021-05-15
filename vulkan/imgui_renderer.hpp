@@ -12,6 +12,7 @@
 #include <imgui.h>
 
 class VulkanBackend;
+class GraphicsPipeline;
 class Texture;
 
 using GLFWWindowHandle = void*;
@@ -27,7 +28,8 @@ public:
 	static std::unique_ptr<ImGuiRenderer> create(VulkanBackend* backend);
 
 	explicit ImGuiRenderer(VulkanBackend* backend);
-
+	~ImGuiRenderer();
+	
 	bool setUp(GLFWWindowHandle window);
 	void shutDown();
 
@@ -66,7 +68,7 @@ private:
 	UiTransform ui_transform_push_constant_;
 	std::vector<VkDescriptorSet> vk_descriptor_sets_;
 
-	Pipeline ui_pipeline_;
+	std::unique_ptr<GraphicsPipeline> ui_pipeline_;
 	uint32_t subpass_number_ = 0;
 	std::vector<VkCommandBuffer> vk_drawing_buffers_;  // these are secondary buffers for recording UI drawing commands
 };

@@ -112,26 +112,6 @@ inline RecordCommandsResult makeRecordCommandsResult(bool success, std::vector<V
     return std::make_tuple(success, command_buffers);
 }
 
-using BindingsMap = std::map<std::string, uint32_t>;
-struct DescriptorSetMetadata {
-    std::map<uint32_t, BindingsMap> set_bindings;
-};
-
-using PushConstantsMap = std::map<std::string, VkPushConstantRange>;
-
-enum class PipelineType { UNKNOWN = -1, GRAPHICS, COMPUTE };
-struct Pipeline {
-    std::string name;
-    PipelineType type = PipelineType::UNKNOWN;
-
-    VkPipelineLayout vk_pipeline_layout = VK_NULL_HANDLE;
-    VkPipeline vk_pipeline = VK_NULL_HANDLE;
-    std::map<uint32_t, VkDescriptorSetLayout> vk_descriptor_set_layouts;
-
-    DescriptorSetMetadata descriptor_metadata;
-    PushConstantsMap push_constants;
-};
-
 // shader interfaces
 // these must match the format, names and binding points defined in the shader code
 

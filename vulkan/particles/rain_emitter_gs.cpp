@@ -8,6 +8,8 @@
 #include "../texture.hpp"
 #include "../vulkan_backend.hpp"
 #include "../shader_module.hpp"
+#include "../pipelines/compute_pipeline.hpp"
+#include "../pipelines/graphics_pipeline.hpp"
 
 #include <glm/gtx/matrix_decompose.hpp>
 
@@ -131,11 +133,11 @@ RecordCommandsResult RainEmitterGS::renderFrame(uint32_t swapchain_image, VkRend
     }
 
     uint32_t offset = swapchain_image;
-	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, SCENE_UNIFORM_SET_ID, 1, &vk_descriptor_sets_graphics_[offset], 0, nullptr);
+	vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_->layout(), SCENE_UNIFORM_SET_ID, 1, &vk_descriptor_sets_graphics_[offset], 0, nullptr);
     offset = backend_->getSwapChainSize() + offset;
-    vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline_layout, PARTICLES_UNIFORM_SET_ID, 1, &vk_descriptor_sets_graphics_[offset], 0, nullptr);
+    vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_->layout(), PARTICLES_UNIFORM_SET_ID, 1, &vk_descriptor_sets_graphics_[offset], 0, nullptr);
 
-	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_.vk_pipeline);
+	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_->handle());
 
 	VkDeviceSize offsets[] = { 0 };
 	vkCmdBindVertexBuffers(command_buffers[0], 0, 1, &particle_buffer_.vk_buffer, offsets);
@@ -170,7 +172,6 @@ DescriptorPoolConfig RainEmitterGS::getDescriptorsCount() const {
 
 bool  RainEmitterGS::createGraphicsPipeline(RenderPass& render_pass, uint32_t subpass_number) {
     GraphicsPipelineConfig config;
-	config.name = "Rain Drops GP";
 	config.vertex = vertex_shader_;
 	config.geometry = geometry_shader_;
 	config.fragment = fragment_shader_;
@@ -182,13 +183,16 @@ bool  RainEmitterGS::createGraphicsPipeline(RenderPass& render_pass, uint32_t su
 	config.enableDepthTesting = true;
 	config.enableTransparency = true;
 
-	graphics_pipeline_ = backend_->createGraphicsPipeline(config);
+	graphics_pipeline_ = backend_->createGraphicsPipeline("Rain Drops GP");
 
-	createUniformBuffers();
-	createGraphicsDescriptorSets(graphics_pipeline_.vk_descriptor_set_layouts);
-    updateGraphicsDescriptorSets(graphics_pipeline_.descriptor_metadata);
+    if (graphics_pipeline_->buildPipeline(config)) {
+        createUniformBuffers();
+        createGraphicsDescriptorSets(graphics_pipeline_->descriptorSets());
+        updateGraphicsDescriptorSets(graphics_pipeline_->descriptorMetadata());
+        return true;
+    }
 	
-	return graphics_pipeline_.vk_pipeline != VK_NULL_HANDLE;
+	return false;
 }
 
 RecordCommandsResult RainEmitterGS::recordComputeCommands() {
@@ -210,11 +214,11 @@ RecordCommandsResult RainEmitterGS::recordComputeCommands() {
         backend_->resetTimestampQueries(compute_command_buffers_[0], config_.start_query_num, 2);
     }
 
-    vkCmdBindPipeline(compute_command_buffers_[0], VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_.vk_pipeline);
-    vkCmdBindDescriptorSets(compute_command_buffers_[0], VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_.vk_pipeline_layout, COMPUTE_PARTICLE_BUFFER_SET_ID, 1, &vk_descriptor_sets_compute_[COMPUTE_PARTICLE_BUFFER_SET_ID], 0, nullptr);
-    vkCmdBindDescriptorSets(compute_command_buffers_[0], VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_.vk_pipeline_layout, COMPUTE_CAMERA_SET_ID, 1, &vk_descriptor_sets_compute_[COMPUTE_CAMERA_SET_ID], 0, nullptr);
+    vkCmdBindPipeline(compute_command_buffers_[0], VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_->handle());
+    vkCmdBindDescriptorSets(compute_command_buffers_[0], VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_->layout(), COMPUTE_PARTICLE_BUFFER_SET_ID, 1, &vk_descriptor_sets_compute_[COMPUTE_PARTICLE_BUFFER_SET_ID], 0, nullptr);
+    vkCmdBindDescriptorSets(compute_command_buffers_[0], VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_->layout(), COMPUTE_CAMERA_SET_ID, 1, &vk_descriptor_sets_compute_[COMPUTE_CAMERA_SET_ID], 0, nullptr);
 
-    vkCmdPushConstants(compute_command_buffers_[0], compute_pipeline_.vk_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ParticlesGlobalState), &global_state_pc_);
+    vkCmdPushConstants(compute_command_buffers_[0], compute_pipeline_->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ParticlesGlobalState), &global_state_pc_);
 
     if (config_.profile) {
         backend_->writeTimestampQuery(compute_command_buffers_[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, config_.start_query_num);

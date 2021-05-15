@@ -7,6 +7,7 @@
 #include "imgui_renderer.hpp"
 #include "vulkan_backend.hpp"
 #include "texture.hpp"
+#include "pipelines/graphics_pipeline.hpp"
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -121,6 +122,8 @@ ImGuiRenderer::ImGuiRenderer(VulkanBackend* backend) :
 
 }
 
+ImGuiRenderer::~ImGuiRenderer() = default;
+
 bool ImGuiRenderer::setUp(GLFWWindowHandle window) {
     InitImGui(window);
     InitVulkanAssets();
@@ -148,8 +151,9 @@ void ImGuiRenderer::shutDown() {
 }
 
 bool ImGuiRenderer::createGraphicsPipeline(RenderPass& render_pass, uint32_t subpass_number) {
+    ui_pipeline_ = vulkan_backend_->createGraphicsPipeline("UI Overlay");
+
     GraphicsPipelineConfig config;
-    config.name = "UI Overlay";
     config.vertex = imgui_vertex_shader_;
     config.fragment = imgui_fragment_shader_;
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -162,18 +166,19 @@ bool ImGuiRenderer::createGraphicsPipeline(RenderPass& render_pass, uint32_t sub
     config.enableTransparency = true;
     config.dynamicStates = true;
 
-    ui_pipeline_ = vulkan_backend_->createGraphicsPipeline(config);
+    if (ui_pipeline_->buildPipeline(config)) {
+        createDescriptorSets(ui_pipeline_->descriptorSets());
+        updateDescriptorSets(ui_pipeline_->descriptorMetadata());
 
-    createDescriptorSets(ui_pipeline_.vk_descriptor_set_layouts);
-    updateDescriptorSets(ui_pipeline_.descriptor_metadata);
+        subpass_number_ = subpass_number;
+        return true;
+    }
 
-    subpass_number_ = subpass_number;
-
-    return ui_pipeline_.vk_pipeline != VK_NULL_HANDLE;
+    return false;
 }
 
 void ImGuiRenderer::cleanupGraphicsPipeline() {
-    vulkan_backend_->destroyPipeline(ui_pipeline_);
+    ui_pipeline_.reset();
 }
 
 DescriptorPoolConfig ImGuiRenderer::getDescriptorsCount() const {
@@ -303,8 +308,8 @@ RecordCommandsResult ImGuiRenderer::renderFrame(uint32_t swapchain_image, VkRend
     }
     
     // update push constants
-    auto pc_iter = ui_pipeline_.push_constants.find(UI_TRANSFORM_PUSH_CONSTANT);
-    if (pc_iter == ui_pipeline_.push_constants.end()) {
+    auto pc_iter = ui_pipeline_->pushConstants().find(UI_TRANSFORM_PUSH_CONSTANT);
+    if (pc_iter == ui_pipeline_->pushConstants().end()) {
         return makeRecordCommandsResult(false, command_buffers);
     }
 
@@ -314,10 +319,10 @@ RecordCommandsResult ImGuiRenderer::renderFrame(uint32_t swapchain_image, VkRend
     ui_transform_push_constant_.translate[0] = -1.0f - draw_data->DisplayPos.x * ui_transform_push_constant_.scale[0];
     ui_transform_push_constant_.translate[1] = -1.0f - draw_data->DisplayPos.y * ui_transform_push_constant_.scale[1];
 
-    vkCmdPushConstants(command_buffers[0], ui_pipeline_.vk_pipeline_layout, pc.stageFlags, pc.offset, pc.size, &ui_transform_push_constant_);
+    vkCmdPushConstants(command_buffers[0], ui_pipeline_->layout(), pc.stageFlags, pc.offset, pc.size, &ui_transform_push_constant_);
 
-    vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, ui_pipeline_.vk_pipeline);
-    vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, ui_pipeline_.vk_pipeline_layout, UI_UNIFORM_SET_ID, 1, &vk_descriptor_sets_[swapchain_image], 0, NULL);
+    vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, ui_pipeline_->handle());
+    vkCmdBindDescriptorSets(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, ui_pipeline_->layout(), UI_UNIFORM_SET_ID, 1, &vk_descriptor_sets_[swapchain_image], 0, NULL);
 
     VkBuffer vertex_buffers[1] = { vertex_buffer_.vk_buffer };
     VkDeviceSize vertex_offset[1] = { 0 };

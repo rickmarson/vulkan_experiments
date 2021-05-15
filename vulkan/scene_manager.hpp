@@ -8,11 +8,13 @@
 #pragma once
 
 #include "common_definitions.hpp"
+#include "pipelines/pipeline.hpp"
 
 class VulkanBackend;
 class Texture;
 class StaticMesh;
 class ShaderModule;
+class GraphicsPipeline;
 
 /*
 * Lights, Cameras and Static Environment geometry
@@ -73,7 +75,7 @@ private:
 	void updateGeometryDescriptorSets(const DescriptorSetMetadata& metadata, bool with_material = true);
 	void updateDescriptorSets();
 
-	void bindSceneDescriptors(VkCommandBuffer& cmd_buffer, const Pipeline& pipeline, uint32_t swapchain_index);
+	void bindSceneDescriptors(VkCommandBuffer& cmd_buffer, const GraphicsPipeline& pipeline, uint32_t swapchain_index);
 	void drawGeometry(VkCommandBuffer& cmd_buffer, VkPipelineLayout pipeline_layout, uint32_t swapchain_index, bool with_material = true);
 	
 	void renderStaticShadowMap();
@@ -87,7 +89,7 @@ private:
 
 	std::shared_ptr<ShaderModule> vertex_shader_;
 	std::shared_ptr<ShaderModule> fragment_shader_;
-	Pipeline scene_graphics_pipeline_;
+	std::unique_ptr<GraphicsPipeline> scene_graphics_pipeline_;
 	uint32_t scene_subpass_number_;
 
 	Buffer scene_vertex_buffer_;
@@ -108,7 +110,7 @@ private:
 	const uint32_t shadow_map_width_ = 2048;
 	const uint32_t shadow_map_height_ = 2048;
 	RenderPass shadow_map_render_pass_;
-	Pipeline shadow_map_pipeline_;
+	std::unique_ptr<GraphicsPipeline> shadow_map_pipeline_;
 	ShadowMapData shadow_map_data_;
 	UniformBuffer shadow_map_data_buffer_;
 	std::vector<VkDescriptorSet> vk_shadow_descriptor_sets_;
