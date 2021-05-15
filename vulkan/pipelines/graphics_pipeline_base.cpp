@@ -23,12 +23,15 @@ bool GraphicsPipelineBase::buildPipeline(const FixedFunctionConfig& config,
     input_assembly.topology = config.topology;
     input_assembly.primitiveRestartEnable = config.enablePrimitiveRestart ? VK_TRUE : VK_FALSE;
 
+    const VkViewport& viewport = config.render_pass->viewport();
+    const VkRect2D& scissor = config.render_pass->scissor();
+
     VkPipelineViewportStateCreateInfo viewport_state{};
     viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewport_state.viewportCount = 1;
-    viewport_state.pViewports = &config.render_pass->viewport();
+    viewport_state.pViewports = &viewport;
     viewport_state.scissorCount = 1;
-    viewport_state.pScissors = &config.render_pass->scissor();
+    viewport_state.pScissors = &scissor;
 
     VkPipelineRasterizationStateCreateInfo rasterizer{};
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
