@@ -15,6 +15,7 @@ class VulkanBackend;
 class ShaderModule;
 class ComputePipeline;
 class GraphicsPipeline;
+class RenderPass;
 
 struct ParticleEmitterConfig {
 	std::string name;
@@ -49,7 +50,7 @@ public:
 	bool createComputePipeline(std::shared_ptr<Texture>& scene_depth_buffer);
 
 	virtual DescriptorPoolConfig getDescriptorsCount() const = 0;
-	virtual bool createGraphicsPipeline(RenderPass& render_pass, uint32_t subpass_number) = 0;
+	virtual bool createGraphicsPipeline(const RenderPass& render_pass, uint32_t subpass_number) = 0;
 
 protected:
 	explicit ParticleEmitterBase(const ParticleEmitterConfig& config, VulkanBackend* backend);

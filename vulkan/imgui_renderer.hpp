@@ -14,6 +14,7 @@
 class VulkanBackend;
 class GraphicsPipeline;
 class Texture;
+class RenderPass;
 
 using GLFWWindowHandle = void*;
 
@@ -35,7 +36,7 @@ public:
 
 	float getHighDpiScale() const { return high_dpi_scale_; }
 
-	bool createGraphicsPipeline(RenderPass& render_pass, uint32_t subpass_number);
+	bool createGraphicsPipeline(const RenderPass& render_pass, uint32_t subpass_number);
 	void cleanupGraphicsPipeline();
 	DescriptorPoolConfig getDescriptorsCount() const;
 

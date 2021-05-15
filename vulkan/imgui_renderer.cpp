@@ -150,7 +150,7 @@ void ImGuiRenderer::shutDown() {
     ImGui::DestroyContext();
 }
 
-bool ImGuiRenderer::createGraphicsPipeline(RenderPass& render_pass, uint32_t subpass_number) {
+bool ImGuiRenderer::createGraphicsPipeline(const RenderPass& render_pass, uint32_t subpass_number) {
     ui_pipeline_ = vulkan_backend_->createGraphicsPipeline("UI Overlay");
 
     GraphicsPipelineConfig config;
@@ -159,7 +159,7 @@ bool ImGuiRenderer::createGraphicsPipeline(RenderPass& render_pass, uint32_t sub
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.vertex_buffer_binding_desc = imgui_vertex_shader_->getInputBindingDescription();
     config.vertex_buffer_attrib_desc = imgui_vertex_shader_->getInputAttributes();
-    config.render_pass = render_pass;
+    config.render_pass = &render_pass;
     config.subpass_number = subpass_number;
     config.cullBackFace = false;
     config.enableDepthTesting = false;

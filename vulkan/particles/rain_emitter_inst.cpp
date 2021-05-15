@@ -199,14 +199,14 @@ DescriptorPoolConfig RainEmitterInst::getDescriptorsCount() const {
     return config;
 }
 
-bool  RainEmitterInst::createGraphicsPipeline(RenderPass& render_pass, uint32_t subpass_number) {
+bool  RainEmitterInst::createGraphicsPipeline(const RenderPass& render_pass, uint32_t subpass_number) {
     GraphicsPipelineConfig config;
 	config.vertex = vertex_shader_;
 	config.fragment = fragment_shader_;
 	config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
 	config.vertex_buffer_binding_desc = vertex_shader_->getInputBindingDescription();
 	config.vertex_buffer_attrib_desc = vertex_shader_->getInputAttributes();
-	config.render_pass = render_pass;
+	config.render_pass = &render_pass;
 	config.subpass_number = 1;
 	config.enableDepthTesting = true;
 	config.enableTransparency = true;

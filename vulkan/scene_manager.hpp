@@ -15,6 +15,7 @@ class Texture;
 class StaticMesh;
 class ShaderModule;
 class GraphicsPipeline;
+class RenderPass;
 
 /*
 * Lights, Cameras and Static Environment geometry
@@ -50,7 +51,7 @@ public:
 	std::shared_ptr<Material> getMaterial(uint32_t idx);
 
 	DescriptorPoolConfig getDescriptorsCount(uint32_t expected_pipelines_count) const;
-	bool createGraphicsPipeline(const std::string& program_name, RenderPass& render_pass, uint32_t subpass_number);
+	bool createGraphicsPipeline(const std::string& program_name, const RenderPass& render_pass, uint32_t subpass_number);
 
 	void prepareForRendering();
 	void update();
@@ -109,7 +110,7 @@ private:
 	bool shadows_enabled_ = false;
 	const uint32_t shadow_map_width_ = 2048;
 	const uint32_t shadow_map_height_ = 2048;
-	RenderPass shadow_map_render_pass_;
+	std::unique_ptr<RenderPass> shadow_map_render_pass_;
 	std::unique_ptr<GraphicsPipeline> shadow_map_pipeline_;
 	ShadowMapData shadow_map_data_;
 	UniformBuffer shadow_map_data_buffer_;

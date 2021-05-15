@@ -7,6 +7,9 @@
 
 #include "pipeline.hpp"
 
+class RenderPass;
+
+
 struct FixedFunctionConfig {  
     VkPrimitiveTopology topology;
     VkVertexInputBindingDescription vertex_buffer_binding_desc;
@@ -21,7 +24,7 @@ struct FixedFunctionConfig {
     bool dynamicStates = false;
     bool enablePrimitiveRestart = false;
 
-    RenderPass render_pass;
+    const RenderPass* render_pass;
     uint32_t subpass_number = 0;
 };
 

@@ -10,6 +10,7 @@
 #include "static_mesh.hpp"
 #include "scene_manager.hpp"
 #include "imgui_renderer.hpp"
+#include "render_pass.hpp"
 
 #include <chrono>
 
@@ -36,7 +37,7 @@ private:
 	std::vector<VkCommandBuffer> main_command_buffers_;
 
 	std::unique_ptr<SceneManager> scene_manager_;
-	RenderPass render_pass_;
+	std::unique_ptr<RenderPass> render_pass_;
 
 	// options
 	float camera_fov_deg_ = 45.0f;
@@ -91,7 +92,6 @@ bool ModelViewer::setupScene() {
 	vulkan_backend_.createDescriptorPool(pool_config);
 
 	RenderPassConfig render_pass_config;
-	render_pass_config.name = "Main Pass";
 	render_pass_config.msaa_samples = vulkan_backend_.getMaxMSAASamples();
 	
 	SubpassConfig model_subpass;
@@ -115,9 +115,9 @@ bool ModelViewer::setupScene() {
 
 	render_pass_config.subpasses = { model_subpass, ui_subpass };
 
-	render_pass_ = vulkan_backend_.createRenderPass(render_pass_config);
+	render_pass_ = vulkan_backend_.createRenderPass("Main Pass");
 
-	if (render_pass_.vk_render_pass == VK_NULL_HANDLE) {
+	if (!render_pass_->buildRenderPass(render_pass_config)) {
 		return false;
 	}
 
@@ -133,10 +133,10 @@ bool ModelViewer::setupScene() {
 }
 
 bool ModelViewer::createGraphicsPipeline() {
-	if (!scene_manager_->createGraphicsPipeline("model_viewer", render_pass_, 0)) {
+	if (!scene_manager_->createGraphicsPipeline("model_viewer", *render_pass_, 0)) {
 		return false;
 	}
-	if (!imgui_renderer_->createGraphicsPipeline(render_pass_, 1)) {
+	if (!imgui_renderer_->createGraphicsPipeline(*render_pass_, 1)) {
 		return false;
 	}
 	return true;
@@ -145,7 +145,7 @@ bool ModelViewer::createGraphicsPipeline() {
 void ModelViewer::cleanupSwapChainAssets() {
 	imgui_renderer_->cleanupGraphicsPipeline();
 	scene_manager_->cleanupSwapChainAssets();
-	vulkan_backend_.destroyRenderPass(render_pass_);
+	render_pass_.reset();
 }
 
 void ModelViewer::cleanup() {
@@ -205,8 +205,8 @@ RecordCommandsResult ModelViewer::renderFrame(uint32_t swapchain_image) {
 
 	VkRenderPassBeginInfo render_pass_info{};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	render_pass_info.renderPass = render_pass_.vk_render_pass;
-	render_pass_info.framebuffer = render_pass_.framebuffers[swapchain_image];
+	render_pass_info.renderPass = render_pass_->handle();
+	render_pass_info.framebuffer = render_pass_->framebuffers()[swapchain_image];
 	render_pass_info.renderArea.offset = { 0, 0 };
 	render_pass_info.renderArea.extent = vulkan_backend_.getSwapChainExtent();
 

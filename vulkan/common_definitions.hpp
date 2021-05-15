@@ -95,18 +95,6 @@ struct SwapChainSupportDetails {
     std::vector<VkPresentModeKHR> present_modes;
 };
 
-struct RenderPass {
-    std::string name;
-    VkSampleCountFlagBits msaa_samples = VK_SAMPLE_COUNT_1_BIT;
-    VkViewport viewport = {0, 0, 0, 0, 0, 1};
-    VkRect2D scissor = {0, 0};
-    VkRenderPass vk_render_pass = VK_NULL_HANDLE;
-
-    std::shared_ptr<Texture> colour_attachment;
-    std::shared_ptr<Texture> depth_attachment;
-    std::vector<VkFramebuffer> framebuffers;
-};
-
 using RecordCommandsResult = std::tuple<bool, std::vector<VkCommandBuffer>>;
 inline RecordCommandsResult makeRecordCommandsResult(bool success, std::vector<VkCommandBuffer>& command_buffers) {
     return std::make_tuple(success, command_buffers);

@@ -10,6 +10,7 @@
 #include "static_mesh.hpp"
 #include "shader_module.hpp"
 #include "pipelines/graphics_pipeline.hpp"
+#include "render_pass.hpp"
 
 #define TINYGLTF_IMPLEMENTATION
 #define TINYGLTF_NOEXCEPTION
@@ -255,7 +256,7 @@ SceneManager::~SceneManager() {
     meshes_.clear();
     textures_.clear();
     if (shadows_enabled_) {
-        backend_->destroyRenderPass(shadow_map_render_pass_);
+        shadow_map_render_pass_.reset();
         backend_->destroyUniformBuffer(shadow_map_data_buffer_);
         shadow_map_pipeline_.reset();
     }
@@ -458,7 +459,7 @@ std::shared_ptr<Material> SceneManager::getMaterial(uint32_t idx) {
     return std::shared_ptr<Material>();
 }
 
-bool SceneManager::createGraphicsPipeline(const std::string& program_name, RenderPass& render_pass, uint32_t subpass_number) { 
+bool SceneManager::createGraphicsPipeline(const std::string& program_name, const RenderPass& render_pass, uint32_t subpass_number) { 
     auto vertex_shader_name = program_name + "_vs";
     auto fragment_shader_name = program_name + "_fs";
 
@@ -494,7 +495,7 @@ bool SceneManager::createGraphicsPipeline(const std::string& program_name, Rende
 	config.cullBackFace = false;
 	config.vertex_buffer_binding_desc = vertex_shader_->getInputBindingDescription();
 	config.vertex_buffer_attrib_desc =vertex_shader_->getInputAttributes();
-	config.render_pass = render_pass;
+	config.render_pass = &render_pass;
 	config.subpass_number = scene_subpass_number_;
 
 	if (scene_graphics_pipeline_->buildPipeline(config)) {
@@ -600,7 +601,7 @@ void SceneManager::deleteUniforms() {
     vk_descriptor_sets_.clear();
 
     if (shadows_enabled_) {
-        backend_->destroyRenderPass(shadow_map_render_pass_);
+        shadow_map_render_pass_.reset();
 	    backend_->destroyUniformBuffer(shadow_map_data_buffer_);
         shadow_map_pipeline_.reset();
         vk_shadow_descriptor_sets_.clear();
@@ -675,7 +676,7 @@ void SceneManager::updateSceneDescriptorSets() {
         last = vk_descriptor_sets_.end();
         auto shadow_descriptors = std::vector<VkDescriptorSet>(first, last);
         backend_->updateDescriptorSets(shadow_map_data_buffer_, shadow_descriptors, shadow_bindings.find(SHADOW_MAP_PROJ_NAME)->second);
-        shadow_map_render_pass_.depth_attachment->updateDescriptorSets(shadow_descriptors, shadow_bindings.find(SHADOW_MAP_NAME)->second);
+        shadow_map_render_pass_->depthAttachment()->updateDescriptorSets(shadow_descriptors, shadow_bindings.find(SHADOW_MAP_NAME)->second);
     }
 }
 
@@ -792,7 +793,6 @@ void SceneManager::setupShadowMapAssets() {
     }
 
     RenderPassConfig render_pass_config;
-	render_pass_config.name = "Shadow Map Pass";
     render_pass_config.framebuffer_size = {shadow_map_width_, shadow_map_height_};
     render_pass_config.offscreen = true;
     render_pass_config.has_colour = false;
@@ -817,7 +817,11 @@ void SceneManager::setupShadowMapAssets() {
     
     render_pass_config.subpasses = { subpass };
 
-	shadow_map_render_pass_ = backend_->createRenderPass(render_pass_config);
+	shadow_map_render_pass_ = backend_->createRenderPass( "Shadow Map Pass");
+
+    if (!shadow_map_render_pass_->buildRenderPass(render_pass_config)) {
+        return;
+    }
 
     auto vertex_shader = backend_->createShaderModule("shadow_map_vs");
 	vertex_shader->loadSpirvShader("shaders/shadow_map_vs.spv");
@@ -833,7 +837,7 @@ void SceneManager::setupShadowMapAssets() {
 	config.cullBackFace = true;
 	config.vertex_buffer_binding_desc = vertex_shader->getInputBindingDescription();
 	config.vertex_buffer_attrib_desc = vertex_shader->getInputAttributes();
-	config.render_pass = shadow_map_render_pass_;
+	config.render_pass = &(*shadow_map_render_pass_);
 	config.subpass_number = 0;
 
 	shadow_map_pipeline_ = backend_->createGraphicsPipeline( "Shadow Map Generation");
@@ -875,8 +879,8 @@ void SceneManager::renderStaticShadowMap() {
 
     VkRenderPassBeginInfo render_pass_info{};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	render_pass_info.renderPass = shadow_map_render_pass_.vk_render_pass;
-	render_pass_info.framebuffer = shadow_map_render_pass_.framebuffers[0]; //
+	render_pass_info.renderPass = shadow_map_render_pass_->handle();
+	render_pass_info.framebuffer = shadow_map_render_pass_->framebuffers()[0]; //
 	render_pass_info.renderArea.offset = { 0, 0 };
 	render_pass_info.renderArea.extent = { shadow_map_width_, shadow_map_height_ };
 

@@ -20,7 +20,7 @@ public:
 	virtual RecordCommandsResult renderFrame(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info) override;
 
 	virtual DescriptorPoolConfig getDescriptorsCount() const override;
-	virtual bool createGraphicsPipeline(RenderPass& render_pass, uint32_t subpass_number) override;
+	virtual bool createGraphicsPipeline(const RenderPass& render_pass, uint32_t subpass_number) override;
 
 private:
 	virtual bool createAssets(std::vector<Particle>& particles) override;

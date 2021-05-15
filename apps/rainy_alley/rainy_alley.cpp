@@ -12,6 +12,7 @@
 #include "particles/rain_emitter_gs.hpp"
 #include "particles/rain_emitter_pr.hpp"
 #include "particles/rain_emitter_inst.hpp"
+#include "render_pass.hpp"
 
 #include <chrono>
 
@@ -53,7 +54,7 @@ private:
 
 	std::shared_ptr<ParticleEmitterBase> rain_drops_emitter_;
 	std::unique_ptr<SceneManager> scene_manager_;
-	RenderPass render_pass_;
+	std::unique_ptr<RenderPass> render_pass_;
 
 	// options
 	float camera_fov_deg_ = 45.0f;
@@ -137,7 +138,6 @@ bool RainyAlley::setupScene() {
 	rain_drops_emitter_->createParticles(number_of_particles_);
 
 	RenderPassConfig render_pass_config;
-	render_pass_config.name = "Main Pass";
 	render_pass_config.msaa_samples = vulkan_backend_.getMaxMSAASamples();
 
 	SubpassConfig alley_subpass;
@@ -170,9 +170,9 @@ bool RainyAlley::setupScene() {
  
 	render_pass_config.subpasses = { alley_subpass, rain_subpass, ui_subpass };
 
-	render_pass_ = vulkan_backend_.createRenderPass(render_pass_config);
+	render_pass_ = vulkan_backend_.createRenderPass("Main Pass");
 
-	if (render_pass_.vk_render_pass == VK_NULL_HANDLE) {
+	if (!render_pass_->buildRenderPass(render_pass_config)) {
 		return false;
 	}
 
@@ -194,8 +194,7 @@ void RainyAlley::cleanupSwapChainAssets() {
 	rain_drops_emitter_.reset();
 	scene_manager_->cleanupSwapChainAssets();
 	imgui_renderer_->cleanupGraphicsPipeline();
-
-	vulkan_backend_.destroyRenderPass(render_pass_);
+	render_pass_.reset();
 }
 
 void RainyAlley::cleanup() {
@@ -227,13 +226,13 @@ void RainyAlley::updateScene() {
 }
 
 bool RainyAlley::createGraphicsPipeline() {
-	if (!scene_manager_->createGraphicsPipeline("alley", render_pass_, 0)) {
+	if (!scene_manager_->createGraphicsPipeline("alley", *render_pass_, 0)) {
 		return false;
 	}
-	if (!rain_drops_emitter_->createGraphicsPipeline(render_pass_, 1)) {
+	if (!rain_drops_emitter_->createGraphicsPipeline(*render_pass_, 1)) {
 		return false;
 	}
-	if (!imgui_renderer_->createGraphicsPipeline(render_pass_, 2)) {
+	if (!imgui_renderer_->createGraphicsPipeline(*render_pass_, 2)) {
 		return false;
 	}
 	if (!rain_drops_emitter_->createComputePipeline(scene_manager_->getSceneDepthBuffer())) {
@@ -264,8 +263,8 @@ RecordCommandsResult RainyAlley::renderFrame(uint32_t swapchain_image) {
 
 	VkRenderPassBeginInfo render_pass_info{};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	render_pass_info.renderPass = render_pass_.vk_render_pass;
-	render_pass_info.framebuffer = render_pass_.framebuffers[swapchain_image];
+	render_pass_info.renderPass = render_pass_->handle();
+	render_pass_info.framebuffer = render_pass_->framebuffers()[swapchain_image];
 	render_pass_info.renderArea.offset = { 0, 0 };
 	render_pass_info.renderArea.extent = vulkan_backend_.getSwapChainExtent();
 

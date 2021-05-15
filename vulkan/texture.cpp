@@ -85,7 +85,7 @@ void Texture::loadImageRGBA(uint32_t width, uint32_t height, bool genMipMaps, gl
                             static_cast<uint8_t>(fill_colour[2] * 255),
                             static_cast<uint8_t>(fill_colour[3] * 255)};
     size_t offset = 0;
-    for (auto px = 0; px < width * height; ++px) {
+    for (uint32_t px = 0; px < width * height; ++px) {
         std::memcpy(pixels.data() + offset, fill_bytes, 4);
         offset += 4;
     }

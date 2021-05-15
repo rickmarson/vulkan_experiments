@@ -15,30 +15,7 @@ class Texture;
 class StaticMesh;
 class GraphicsPipeline;
 class ComputePipeline;
-
-struct SubpassConfig {
-    enum class DependencyType { NONE = 0, COLOUR_ATTACHMENT, FRAGMENT_SHADER, EARLY_FRAGMENT_TESTS, LATE_FRAGMENT_TESTS };
-    struct Dependency {
-        int32_t src_subpass = 0;  // -1 -> external
-        int32_t dst_subpass = 0;
-        DependencyType src_dependency = DependencyType::NONE;
-        DependencyType dst_dependency = DependencyType::NONE;
-    };
-    bool use_colour_attachment = false;
-    bool use_depth_stencil_attachemnt = false;
-    std::list<Dependency> dependencies;
-};
-
-struct RenderPassConfig {
-    std::string name;
-    std::optional<VkExtent2D> framebuffer_size = std::nullopt;
-    VkSampleCountFlagBits msaa_samples = VK_SAMPLE_COUNT_1_BIT;
-    bool offscreen = false;
-    bool has_colour = true;
-    bool has_depth = true;
-    bool store_depth = false;
-    std::vector<SubpassConfig> subpasses;
-};
+class RenderPass;
 
 // VulkanBackend
 
@@ -76,7 +53,7 @@ public:
     void resetCommandBuffers(std::vector<VkCommandBuffer>& cmd_buffers) const;
     void freeCommandBuffers(std::vector<VkCommandBuffer>& cmd_buffers) const;
 
-    RenderPass createRenderPass(const RenderPassConfig& config);
+    std::unique_ptr<RenderPass> createRenderPass(const std::string& name);
     std::unique_ptr<GraphicsPipeline> createGraphicsPipeline(const std::string& name);
     std::unique_ptr<ComputePipeline> createComputePipeline(const std::string& name);
 
@@ -101,7 +78,6 @@ public:
     void updateDescriptorSets(const Buffer& buffer, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t binding);
 
     void destroyBuffer(Buffer& buffer);
-    void destroyRenderPass(RenderPass& render_pass);
     void destroyUniformBuffer(UniformBuffer& uniform_buffer);
     
     VkResult startNextFrame(uint32_t& next_swapchain_image, bool window_resized);
@@ -120,6 +96,7 @@ public:
 
 private:
     friend class Texture;
+    friend class RenderPass;
 
     bool initVulkan();
     

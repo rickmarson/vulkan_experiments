@@ -5,6 +5,7 @@
 */
 
 #include "graphics_pipeline_base.hpp"
+#include "../render_pass.hpp"
 
 bool GraphicsPipelineBase::buildPipeline(const FixedFunctionConfig& config, 
                               const GraphicsPipelineLayoutInfo& layout_info,
@@ -25,9 +26,9 @@ bool GraphicsPipelineBase::buildPipeline(const FixedFunctionConfig& config,
     VkPipelineViewportStateCreateInfo viewport_state{};
     viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewport_state.viewportCount = 1;
-    viewport_state.pViewports = &config.render_pass.viewport;
+    viewport_state.pViewports = &config.render_pass->viewport();
     viewport_state.scissorCount = 1;
-    viewport_state.pScissors = &config.render_pass.scissor;
+    viewport_state.pScissors = &config.render_pass->scissor();
 
     VkPipelineRasterizationStateCreateInfo rasterizer{};
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -45,7 +46,7 @@ bool GraphicsPipelineBase::buildPipeline(const FixedFunctionConfig& config,
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_TRUE;
-    multisampling.rasterizationSamples = config.render_pass.msaa_samples;
+    multisampling.rasterizationSamples = config.render_pass->msaaSamples();
     multisampling.minSampleShading = 0.2f;
     multisampling.pSampleMask = nullptr; // Optional
     multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
@@ -119,7 +120,7 @@ bool GraphicsPipelineBase::buildPipeline(const FixedFunctionConfig& config,
     pipeline_info.pColorBlendState = &color_blending;
     pipeline_info.pDynamicState = &dynamic_state_info;
     pipeline_info.layout = pipeline_layout;
-    pipeline_info.renderPass = config.render_pass.vk_render_pass;
+    pipeline_info.renderPass = config.render_pass->handle();
     pipeline_info.subpass = config.subpass_number;
     pipeline_info.basePipelineHandle = VK_NULL_HANDLE; // Optional
     pipeline_info.basePipelineIndex = -1; // Optional
