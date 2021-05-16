@@ -9,6 +9,7 @@
 #include "texture.hpp"
 #include "static_mesh.hpp"
 #include "pipelines/graphics_pipeline.hpp"
+#include "pipelines/mesh_pipeline.hpp"
 #include "pipelines/compute_pipeline.hpp"
 #include "render_pass.hpp"
 
@@ -120,9 +121,9 @@ namespace {
         vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count, available_extensions.data());
 
         if (std::find_if(available_extensions.begin(), 
-                                    available_extensions.end(), 
-                                    [](const VkExtensionProperties& p) { return std::string(p.extensionName) == VK_NV_MESH_SHADER_EXTENSION_NAME; }) 
-                                != available_extensions.end()) {
+                             available_extensions.end(), 
+                             [](const VkExtensionProperties& p) { return std::string(p.extensionName) == VK_NV_MESH_SHADER_EXTENSION_NAME; }) 
+                != available_extensions.end()) {
             required_device_ext.push_back(VK_NV_MESH_SHADER_EXTENSION_NAME);
             return true;      
         }
@@ -261,7 +262,7 @@ bool VulkanBackend::createInstance(uint32_t required_extensions_count, const cha
     app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     app_info.pEngineName = "No Engine";
     app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    app_info.apiVersion = VK_API_VERSION_1_0;
+    app_info.apiVersion = VK_API_VERSION_1_2;
 
     VkInstanceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -389,6 +390,13 @@ std::unique_ptr<RenderPass> VulkanBackend::createRenderPass(const std::string& n
 
  std::unique_ptr<GraphicsPipeline> VulkanBackend::createGraphicsPipeline(const std::string& name) {
    return std::unique_ptr<GraphicsPipeline>(new GraphicsPipeline(device_, name));
+}
+
+std::unique_ptr<MeshPipeline> VulkanBackend::createMeshPipeline(const std::string& name) {
+    if (mesh_shader_available_) {
+        return std::unique_ptr<MeshPipeline>(new MeshPipeline(device_, name));
+    }
+    return std::unique_ptr<MeshPipeline>();
 }
 
 std::unique_ptr<ComputePipeline> VulkanBackend::createComputePipeline(const std::string& name) {
@@ -712,18 +720,28 @@ bool VulkanBackend::createLogicalDevice() {
         queue_create_infos.push_back(queue_create_info);
     }
 
-    VkPhysicalDeviceFeatures device_features{};
-    device_features.samplerAnisotropy = VK_TRUE;
-    device_features.sampleRateShading = VK_TRUE;
-    device_features.geometryShader = VK_TRUE;
-    device_features.fragmentStoresAndAtomics = VK_TRUE;
+    VkPhysicalDeviceMeshShaderFeaturesNV mesh_shader_features{};
+    mesh_shader_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV;
+    mesh_shader_features.pNext = nullptr;
+    mesh_shader_features.taskShader = VK_TRUE;
+    mesh_shader_features.meshShader = VK_TRUE;
+
+    VkPhysicalDeviceFeatures2 device_features2{};
+    device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    device_features2.pNext = nullptr;
+
+    if (mesh_shader_available_) {
+        device_features2.pNext = &mesh_shader_features;
+    }
+
+    vkGetPhysicalDeviceFeatures2(physical_device_, &device_features2);  // enable all supported features
 
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    create_info.pNext = nullptr;
+    create_info.pNext = &device_features2;
     create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size());
     create_info.pQueueCreateInfos = queue_create_infos.data();
-    create_info.pEnabledFeatures = &device_features;
+    create_info.pEnabledFeatures = nullptr;  // deprecated in Vulkan 1.1
     create_info.enabledExtensionCount = static_cast<uint32_t>(required_device_ext.size());
     create_info.ppEnabledExtensionNames = required_device_ext.data();
 

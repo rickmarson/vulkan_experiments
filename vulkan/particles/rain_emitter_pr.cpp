@@ -82,10 +82,10 @@ bool RainEmitterPR::createAssets(std::vector<Particle>& particles) {
     std::vector<uint32_t> particle_indices(index_count_);
 
     for (size_t i = 0, idx = 0; i < particle_indices.size() - 5; i = i + 5, idx = idx + 4) {
-        particle_indices[i] = idx;
-        particle_indices[i + 1] = idx + 1;
-        particle_indices[i + 2] = idx + 2;
-        particle_indices[i + 3] = idx + 3;
+        particle_indices[i] = uint32_t(idx);
+        particle_indices[i + 1] = uint32_t(idx + 1);
+        particle_indices[i + 2] = uint32_t(idx + 2);
+        particle_indices[i + 3] = uint32_t(idx + 3);
         particle_indices[i + 4] = 0xFFFFFFFF;
     }
 

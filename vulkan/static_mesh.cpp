@@ -48,7 +48,7 @@ void StaticMesh::deleteUniformBuffer() {
 
 DescriptorPoolConfig StaticMesh::getDescriptorsCount() const {
     DescriptorPoolConfig config;
-    config.uniform_buffers_count = surfaces_.size() * 1 + 1;
+    config.uniform_buffers_count = uint32_t(surfaces_.size() * 1 + 1);
 
     return config;
 }

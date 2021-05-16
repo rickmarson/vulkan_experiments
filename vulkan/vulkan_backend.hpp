@@ -14,6 +14,7 @@ class ShaderModule;
 class Texture;
 class StaticMesh;
 class GraphicsPipeline;
+class MeshPipeline;
 class ComputePipeline;
 class RenderPass;
 
@@ -34,6 +35,7 @@ public:
     VkDescriptorPool getDescriptorPool() { return descriptor_pool_; }
     VkDevice getDevice() { return device_; }
     VkSampleCountFlagBits getMaxMSAASamples() const { return max_msaa_samples_; }
+    bool meshShaderSupported() const { return mesh_shader_available_; }
 
     bool startUp();
     void shutDown();
@@ -55,6 +57,7 @@ public:
 
     std::unique_ptr<RenderPass> createRenderPass(const std::string& name);
     std::unique_ptr<GraphicsPipeline> createGraphicsPipeline(const std::string& name);
+    std::unique_ptr<MeshPipeline> createMeshPipeline(const std::string& name);
     std::unique_ptr<ComputePipeline> createComputePipeline(const std::string& name);
 
     template<typename DataType>

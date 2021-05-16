@@ -55,7 +55,7 @@ public:
 
 	void prepareForRendering();
 	void update();
-	RecordCommandsResult renderFrame(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info);
+	RecordCommandsResult renderFrame(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info, const ProfileConfig& profile_config);
 	void cleanupSwapChainAssets();
 
 	std::shared_ptr<Texture>& getSceneDepthBuffer() { return scene_depth_buffer_; }

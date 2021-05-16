@@ -91,7 +91,7 @@ bool RainEmitterInst::createAssets(std::vector<Particle>& particles) {
     vertex_buffer_ = backend_->createVertexBuffer<QuadVertex>(config_.name + "_particles", vertices, false);
     index_buffer_ = backend_->createIndexBuffer<uint32_t>(config_.name + "_particle_idx", indices, false);
 
-    instance_count_ = particles.size();
+    instance_count_ = uint32_t(particles.size());
 
     if (!config_.texture_atlas.empty()) {
         texture_atlas_ = backend_->createTexture(config_.name + "_texture_atlas");

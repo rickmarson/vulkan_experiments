@@ -528,7 +528,7 @@ void SceneManager::update() {
     }
 }
 
-RecordCommandsResult SceneManager::renderFrame(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info) {
+RecordCommandsResult SceneManager::renderFrame(uint32_t swapchain_image, VkRenderPassBeginInfo& render_pass_info, const ProfileConfig& profile_config) {
     std::vector<VkCommandBuffer> command_buffers = { command_buffers_[swapchain_image] };
     backend_->resetCommandBuffers(command_buffers);
 
@@ -555,11 +555,15 @@ RecordCommandsResult SceneManager::renderFrame(uint32_t swapchain_image, VkRende
 
 	vkCmdBindPipeline(command_buffers[0], VK_PIPELINE_BIND_POINT_GRAPHICS, scene_graphics_pipeline_->handle());
 
-	backend_->writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 2); // does nothing if not in debug
+    if (profile_config.profile_draw) {
+	    backend_->writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, profile_config.start_query_num); // does nothing if not in debug
+    }
 
 	drawGeometry(command_buffers[0], scene_graphics_pipeline_->layout(), swapchain_image);
 
-	backend_->writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 3); // does nothing if not in debug
+    if (profile_config.profile_draw) {
+	    backend_->writeTimestampQuery(command_buffers[0], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, profile_config.stop_query_num); // does nothing if not in debug
+    }
 
     if (vkEndCommandBuffer(command_buffers[0]) != VK_SUCCESS) {
         std::cerr << "[IMGUI Renderer] Failed to record command buffer!" << std::endl;

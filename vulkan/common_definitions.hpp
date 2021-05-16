@@ -100,6 +100,12 @@ inline RecordCommandsResult makeRecordCommandsResult(bool success, std::vector<V
     return std::make_tuple(success, command_buffers);
 }
 
+struct ProfileConfig {
+	bool profile_draw = false;
+	uint32_t start_query_num = 0;
+	uint32_t stop_query_num = 0;
+};
+
 // shader interfaces
 // these must match the format, names and binding points defined in the shader code
 

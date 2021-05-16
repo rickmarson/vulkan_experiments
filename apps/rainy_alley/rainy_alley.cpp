@@ -277,7 +277,8 @@ RecordCommandsResult RainyAlley::renderFrame(uint32_t swapchain_image) {
 
 	vkCmdBeginRenderPass(command_buffers[0], &render_pass_info, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 	
-	auto scene_commands = scene_manager_->renderFrame(swapchain_image, render_pass_info);
+	ProfileConfig scene_profile_config = { true, 2, 3 };
+	auto scene_commands = scene_manager_->renderFrame(swapchain_image, render_pass_info, scene_profile_config);
 	auto success = std::get<0>(scene_commands);
 
 	if (success) {
@@ -298,7 +299,7 @@ RecordCommandsResult RainyAlley::renderFrame(uint32_t swapchain_image) {
 	// register UI overlay commands
 	vkCmdNextSubpass(command_buffers[0], VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 	
-	ImGuiProfileConfig ui_profile_config = { true, 6, 7 };
+	ProfileConfig ui_profile_config = { true, 6, 7 };
 	auto ui_commands = imgui_renderer_->renderFrame(swapchain_image, render_pass_info, ui_profile_config);
 	success = std::get<0>(ui_commands);
 
