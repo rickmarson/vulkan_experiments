@@ -291,6 +291,8 @@ bool VulkanBackend::createInstance(uint32_t required_extensions_count, const cha
 
     instance_out = vk_instance_;
 
+    loadOptionalVkExtensions(vk_instance_);
+
     return true;
 }
 

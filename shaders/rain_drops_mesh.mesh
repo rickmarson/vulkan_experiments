@@ -1,0 +1,81 @@
+#version 450
+ 
+#extension GL_NV_mesh_shader : require
+
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+#include "common.glsl"
+ 
+layout(local_size_x = 1) in;
+layout(triangles, max_vertices = 4, max_primitives = 2) out;
+ 
+layout (location = 0) out VertexData
+{
+    vec4 colour;
+    vec2 uv;
+} v_out[];  // max_vertices
+ 
+layout(set = 0, binding = 0, rgba32f) uniform imageBuffer particle_buffer;
+
+layout(push_constant) uniform SceneConstants {
+    mat4 view;
+    mat4 proj;
+    uint particles_count;
+} constants;
+
+const float half_size = 0.05;
+const vec4 top_left_u = vec4(0.0, 0.5, 0.0, 0.5);
+const vec4 top_left_v = vec4(0.0, 0.0, 0.5, 0.5);
+
+void main()
+{
+    int thread = int(gl_GlobalInvocationID.x);
+    if (thread >= constants.particles_count) return;
+
+    mat4 model_view = constants.view; // particles are alredy in world coords
+    mat4 proj = constants.proj;
+    worldToVulkan(model_view);
+    projectionToVulkan(proj);
+
+    vec4 out_colour = vec4(1.0, 1.0, 1.0, 1.0);
+
+    vec4 centre = imageLoad(particle_buffer, thread * 2);
+    vec4 centre_view = model_view * vec4(centre.xyz, 1.0);
+
+    uint tex_idx = 0;
+    if (centre.w > 0.5) tex_idx = 1 + thread % 3;
+
+    vec4 vertex_1 = centre_view + vec4(-half_size, -half_size, 0.0, 0.0);
+    vec4 vertex_2 = centre_view + vec4(half_size, -half_size, 0.0, 0.0);
+    vec4 vertex_3 = centre_view + vec4(-half_size, half_size, 0.0, 0.0);
+    vec4 vertex_4 = centre_view + vec4(half_size, half_size, 0.0, 0.0);
+    
+    // Vertex positions
+    gl_MeshVerticesNV[0].gl_Position = proj * vertex_1; 
+    gl_MeshVerticesNV[1].gl_Position = proj * vertex_2; 
+    gl_MeshVerticesNV[2].gl_Position = proj * vertex_3;
+    gl_MeshVerticesNV[3].gl_Position = proj * vertex_4; 
+
+    // Indices
+    gl_PrimitiveIndicesNV[0] = 0;
+    gl_PrimitiveIndicesNV[1] = 1;
+    gl_PrimitiveIndicesNV[2] = 2;
+    gl_PrimitiveIndicesNV[3] = 1;
+    gl_PrimitiveIndicesNV[4] = 3;
+    gl_PrimitiveIndicesNV[5] = 2;
+    
+    // Vertex colours
+    v_out[0].colour = out_colour;
+    v_out[1].colour = out_colour;
+    v_out[2].colour = out_colour;
+    v_out[3].colour = out_colour;
+
+    // Vertex UVs
+    v_out[0].uv = vec2(top_left_u[tex_idx], top_left_v[tex_idx] + 0.5);
+    v_out[1].uv = vec2(top_left_u[tex_idx] + 0.5, top_left_v[tex_idx] + 0.5);
+    v_out[2].uv = vec2(top_left_u[tex_idx], top_left_v[tex_idx]);
+    v_out[3].uv = vec2(top_left_u[tex_idx] + 0.5, top_left_v[tex_idx]);
+ 
+    // Number of triangles  
+    gl_PrimitiveCountNV = 2;
+}

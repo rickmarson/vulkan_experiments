@@ -12,6 +12,7 @@
 #include "particles/rain_emitter_gs.hpp"
 #include "particles/rain_emitter_pr.hpp"
 #include "particles/rain_emitter_inst.hpp"
+#include "particles/rain_emitter_mesh.hpp"
 #include "render_pass.hpp"
 
 #include <chrono>
@@ -21,6 +22,7 @@ const char* const kEmitterTypes[] = {
 	"Geometry Shader",
 	"Primitive Restart",
 	"Instancing",
+	"Mesh",
 	0
 };
 
@@ -28,6 +30,7 @@ enum EmitterType : int {
 	GEOMETRY_SHADER,
 	PRIMITIVE_RESTART,
 	INSTANCING,
+	MESH
 };
 
 
@@ -118,6 +121,9 @@ bool RainyAlley::setupScene() {
 			break;
 		case INSTANCING:
 			rain_drops_emitter_ = RainEmitterInst::createParticleEmitter(emitter_config, &vulkan_backend_);
+			break;
+		case MESH:
+			rain_drops_emitter_ = RainEmitterMesh::createParticleEmitter(emitter_config, &vulkan_backend_);
 			break;
 	}
 
@@ -340,7 +346,12 @@ void RainyAlley::drawUi() {
 
 	ImGui::Begin("Options");
 
-	if (ImGui::Combo("Emitter Type", (int*)&selected_emitter_type_, kEmitterTypes, 3)) {
+	int available_emitters = 3;
+	if (vulkan_backend_.meshShaderSupported()) {
+		++available_emitters;
+	}
+
+	if (ImGui::Combo("Emitter Type", (int*)&selected_emitter_type_, kEmitterTypes, available_emitters)) {
 		force_recreate_swapchain_ = true;
 	}  
 	

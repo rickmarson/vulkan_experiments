@@ -7,6 +7,7 @@
 #pragma once
 
 #include "common_definitions.hpp"
+#include "extensions.hpp"
 #include <optional>
 
 // Interfaces

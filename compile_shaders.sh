@@ -21,3 +21,6 @@ glslc $ROOT_PATH/shaders/rain_drops_pr.frag -o $ROOT_PATH/shaders/rain_drops_pr_
 glslc $ROOT_PATH/shaders/rain_drops_inst.frag -o $ROOT_PATH/shaders/rain_drops_inst_fs.spv
 glslc $ROOT_PATH/shaders/rainfall_geom.comp -o $ROOT_PATH/shaders/rainfall_geom_cp.spv
 glslc $ROOT_PATH/shaders/rainfall_pr.comp -o $ROOT_PATH/shaders/rainfall_pr_cp.spv
+
+# glslc doesn't support mesh shaders yet
+glslangValidator -V $ROOT_PATH/shaders/rain_drops_mesh.mesh -o $ROOT_PATH/shaders/rain_drops_mesh_ms.spv

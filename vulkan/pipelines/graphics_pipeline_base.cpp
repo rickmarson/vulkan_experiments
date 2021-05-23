@@ -13,10 +13,18 @@ bool GraphicsPipelineBase::buildPipeline(const FixedFunctionConfig& config,
 
     VkPipelineVertexInputStateCreateInfo vertex_input_info{};
     vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex_input_info.vertexBindingDescriptionCount = 1;
-    vertex_input_info.pVertexBindingDescriptions = &config.vertex_buffer_binding_desc;
-    vertex_input_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(config.vertex_buffer_attrib_desc.size());
-    vertex_input_info.pVertexAttributeDescriptions = config.vertex_buffer_attrib_desc.data();
+
+    if (config.has_vertex_assembly_stage) {
+        vertex_input_info.vertexBindingDescriptionCount = 1;
+        vertex_input_info.pVertexBindingDescriptions = &config.vertex_buffer_binding_desc;
+        vertex_input_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(config.vertex_buffer_attrib_desc.size());
+        vertex_input_info.pVertexAttributeDescriptions = config.vertex_buffer_attrib_desc.data();
+    } else {
+        vertex_input_info.vertexBindingDescriptionCount = 0;
+        vertex_input_info.pVertexBindingDescriptions = nullptr;
+        vertex_input_info.vertexAttributeDescriptionCount = 0;
+        vertex_input_info.pVertexAttributeDescriptions = nullptr;
+    }
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly{};
     input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;

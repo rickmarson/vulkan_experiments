@@ -14,6 +14,7 @@ struct FixedFunctionConfig {
     VkPrimitiveTopology topology;
     VkVertexInputBindingDescription vertex_buffer_binding_desc;
     std::vector<VkVertexInputAttributeDescription> vertex_buffer_attrib_desc;
+    bool has_vertex_assembly_stage = true;
 
     // fixed function options
     bool cullBackFace = true;
