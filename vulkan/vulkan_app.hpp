@@ -45,4 +45,6 @@ protected:
     std::string window_title_;
 
     VulkanBackend vulkan_backend_;
+    uint64_t frame_ = 0;
+    bool hide_ui_ = false;
 };

@@ -16,6 +16,7 @@
 #include "render_pass.hpp"
 
 #include <chrono>
+#include <numeric>
 
 // Declarations
 const char* const kEmitterTypes[] = {
@@ -64,6 +65,7 @@ private:
 	int number_of_particles_ = 1000;
 	float lifetime_after_collision_ = 0.25f;
 	EmitterType selected_emitter_type_ = GEOMETRY_SHADER;
+	bool show_average_stats_ = true;
 };
 
 // Implementation
@@ -376,23 +378,80 @@ void RainyAlley::drawUi() {
 	ImGui::End();
 
 	auto extent = vulkan_backend_.getSwapChainExtent();
-	auto stats_width = 220 * high_dpi_scale;
+	auto stats_width = 270 * high_dpi_scale;
 	auto stats_pos = extent.width - stats_width - 50;
 	ImGui::SetNextWindowPos(ImVec2(stats_pos, 10));
-	ImGui::SetNextWindowSizeConstraints(ImVec2(stats_width, 120 * high_dpi_scale), ImVec2(stats_width, 150 * high_dpi_scale));
+	ImGui::SetNextWindowSizeConstraints(ImVec2(stats_width, 150 * high_dpi_scale), ImVec2(stats_width + 50, 320 * high_dpi_scale));
 
 	ImGui::Begin("Stats");
+
+	static auto compute_avg = 0.f;
+	static auto scene_avg = 0.f;
+	static auto rain_avg = 0.f;
+	static auto ui_avg = 0.f;
+
+	int avg_size = 100;
+	static std::vector<float> compute_history(avg_size, 0.f);
+	static std::vector<float> scene_history(avg_size, 0.f);
+	static std::vector<float> rain_history(avg_size, 0.f);
+	static std::vector<float> ui_history(avg_size, 0.f);
+
+	static std::vector<float> plot_values(1000, 0.f);
+	auto total_particles_time = time_to_exec_compute + time_to_draw_particles;
+	int plot_idx = frame_ % 1000;
 	
-	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.35f, 0.35f, 1.0f));
+	int history_idx = frame_ % avg_size;
+	if (force_recreate_swapchain_) {
+		compute_history.clear(); 
+		compute_history.insert(compute_history.begin(), avg_size, 0.f);
+		scene_history.clear();
+		scene_history.insert(scene_history.begin(), avg_size, 0.f);
+		rain_history.clear();
+		rain_history.insert(rain_history.begin(), avg_size, 0.f);
+		ui_history.clear();
+		ui_history.insert(ui_history.begin(), avg_size, 0.f);
+		plot_values.clear();
+		plot_values.insert(plot_values.begin(), 1000, 0.f);
+	} else {
+		compute_history[history_idx] = time_to_exec_compute;
+		scene_history[history_idx] = time_to_draw_geometry;
+		rain_history[history_idx] = time_to_draw_particles;
+		ui_history[history_idx] = time_to_draw_ui;
+
+		compute_avg = std::accumulate(compute_history.begin(), compute_history.end(), 0.f) / avg_size;
+		scene_avg = std::accumulate(scene_history.begin(), scene_history.end(), 0.f) / avg_size;
+		rain_avg = std::accumulate(rain_history.begin(), rain_history.end(), 0.f) / avg_size;
+		ui_avg = std::accumulate(ui_history.begin(), ui_history.end(), 0.f) / avg_size;
+
+		plot_values[plot_idx] = total_particles_time;
+	}
 
 	ImGui::Text("Frame time: %.3f ms/frame", 1000.0f / ImGui::GetIO().Framerate);
 	ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
-	ImGui::Text("Rain update time: %.4f ms", time_to_exec_compute);
-	ImGui::Text("Alley draw time: %.4f ms", time_to_draw_geometry);
-	ImGui::Text("Rain draw time: %.4f ms", time_to_draw_particles);
-	ImGui::Text("UI draw time: %.4f ms", time_to_draw_ui);
+
+	ImGui::Checkbox("Show Average", &show_average_stats_);
+	
+	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.35f, 0.35f, 1.0f));
+
+	if (show_average_stats_) {
+		ImGui::Text("Rain update time: %.4f ms", compute_avg);
+		ImGui::Text("Alley draw time: %.4f ms", scene_avg);
+		ImGui::Text("Rain draw time: %.4f ms", rain_avg);
+		ImGui::Text("UI draw time: %.4f ms", ui_avg);
+	} else {
+		ImGui::Text("Rain update time: %.4f ms", time_to_exec_compute);
+		ImGui::Text("Alley draw time: %.4f ms", time_to_draw_geometry);
+		ImGui::Text("Rain draw time: %.4f ms", time_to_draw_particles);
+		ImGui::Text("UI draw time: %.4f ms", time_to_draw_ui);
+	}
 
 	ImGui::PopStyleColor();
+
+	auto max_value = std::max_element(plot_values.begin(), plot_values.end());
+	auto overlay = std::to_string(*max_value);
+
+	ImGui::Text("Total Rain Frame Time:");
+	ImGui::PlotLines("##Total Rain Update Time", plot_values.data(), 1000, 0, overlay.c_str(), 0.f, (*max_value) + (*max_value) * 0.2f);
 
 	ImGui::End();
 

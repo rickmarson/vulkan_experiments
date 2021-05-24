@@ -26,6 +26,11 @@ The main objective is to demonstrate screen-space collision techniques for GPU p
 
 Highlights:
 - Compute pipeline for rain simulation and collision detection
+- A comparison of four methods to expand particle billoboards from their positions
+    - Using a geometry shader
+    - Using instancing to multiply a single quad
+    - Packing all quads into a sinlge vertex buffer, updating it in the compute shader, and using primitive restart to separate each quad
+    - Using the NVidia mesh pipeline extension as a substitute for vertex + geometry shader
 - Simple BRDF lighting model
 - Normal mapping
 - Shadow map
