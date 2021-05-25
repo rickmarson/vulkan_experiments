@@ -23,7 +23,8 @@ layout(push_constant) uniform SceneConstants {
     uint particles_count;
 } constants;
 
-const float half_size = 0.05;
+const vec4 half_size_x = vec4(0.005, 0.065, 0.05, 0.06);
+const vec4 half_size_y = vec4(0.08, 0.065, 0.05, 0.06);
 const vec4 top_left_u = vec4(0.0, 0.5, 0.0, 0.5);
 const vec4 top_left_v = vec4(0.0, 0.0, 0.5, 0.5);
 
@@ -45,10 +46,10 @@ void main()
     uint tex_idx = 0;
     if (centre.w > 0.5) tex_idx = 1 + thread % 3;
 
-    vec4 vertex_1 = centre_view + vec4(-half_size, -half_size, 0.0, 0.0);
-    vec4 vertex_2 = centre_view + vec4(half_size, -half_size, 0.0, 0.0);
-    vec4 vertex_3 = centre_view + vec4(-half_size, half_size, 0.0, 0.0);
-    vec4 vertex_4 = centre_view + vec4(half_size, half_size, 0.0, 0.0);
+    vec4 vertex_1 = centre_view + vec4(-half_size_x[tex_idx], -half_size_y[tex_idx], 0.0, 0.0);
+    vec4 vertex_2 = centre_view + vec4(half_size_x[tex_idx], -half_size_y[tex_idx], 0.0, 0.0);
+    vec4 vertex_3 = centre_view + vec4(-half_size_x[tex_idx], half_size_y[tex_idx], 0.0, 0.0);
+    vec4 vertex_4 = centre_view + vec4(half_size_x[tex_idx], half_size_y[tex_idx], 0.0, 0.0);
     
     // Vertex positions
     gl_MeshVerticesNV[0].gl_Position = proj * vertex_1; 

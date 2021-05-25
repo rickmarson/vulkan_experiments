@@ -22,7 +22,8 @@ layout(push_constant) uniform GlobalState {
 } global_state;
 
 const vec3 g = vec3(0.0, 0.0, -9.81);
-const float quad_half_size = 0.05;
+const vec4 quad_half_size_x = vec4(0.005, 0.065, 0.05, 0.06);
+const vec4 quad_half_size_y = vec4(0.08, 0.065, 0.05, 0.06);
 
 void main() {
     if (gl_GlobalInvocationID.x >= global_state.particles_count) return;
@@ -77,10 +78,14 @@ void main() {
     worldToVulkan(view);
     vec4 pos_view = view * vec4(pos.xyz, 1.0);
     pos_view.w = pos.w;
-    vec4 v1 = pos_view + vec4(-quad_half_size, -quad_half_size, 0.0, 0.0);
-    vec4 v2 = pos_view + vec4(quad_half_size, -quad_half_size, 0.0, 0.0);
-    vec4 v3 = pos_view + vec4(-quad_half_size, quad_half_size, 0.0, 0.0);
-    vec4 v4 = pos_view + vec4(quad_half_size, quad_half_size, 0.0, 0.0);
+
+    int tex_idx = 0;
+    if (pos_view.w > 0.5) tex_idx = 1 + int(gl_GlobalInvocationID.x) % 3;
+
+    vec4 v1 = pos_view + vec4(-quad_half_size_x[tex_idx], -quad_half_size_y[tex_idx], 0.0, 0.0);
+    vec4 v2 = pos_view + vec4(quad_half_size_x[tex_idx], -quad_half_size_y[tex_idx], 0.0, 0.0);
+    vec4 v3 = pos_view + vec4(-quad_half_size_x[tex_idx], quad_half_size_y[tex_idx], 0.0, 0.0);
+    vec4 v4 = pos_view + vec4(quad_half_size_x[tex_idx], quad_half_size_y[tex_idx], 0.0, 0.0);
 
     int vertex_idx = int(gl_GlobalInvocationID.x * 4);
     imageStore(vertex_buffer, vertex_idx, v1);

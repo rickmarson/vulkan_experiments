@@ -63,7 +63,7 @@ private:
 	// options
 	float camera_fov_deg_ = 45.0f;
 	int number_of_particles_ = 1000;
-	float lifetime_after_collision_ = 0.25f;
+	float lifetime_after_collision_ = 0.12f;
 	EmitterType selected_emitter_type_ = GEOMETRY_SHADER;
 	bool show_average_stats_ = true;
 };

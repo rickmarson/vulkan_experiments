@@ -16,6 +16,8 @@ layout(push_constant) uniform ViewProj {
     mat4 proj;
 } view_proj;
 
+const vec4 scale_x = vec4(0.1, 1.3, 1.0, 1.2);
+const vec4 scale_y = vec4(1.6, 1.3, 1.0, 1.2);
 const vec4 top_left_u = vec4(0.0, 0.5, 0.0, 0.5);
 const vec4 top_left_v = vec4(0.0, 0.0, 0.5, 0.5);
 
@@ -28,11 +30,14 @@ void main() {
     vec4 centre = imageLoad(particle_buffer, gl_InstanceIndex * 2);
     vec4 centre_view = model_view * vec4(centre.xyz, 1.0);
  
-    gl_Position = proj * (centre_view + in_position);
-
     out_colour = vec4(1.0, 1.0, 1.0, 1.0);
     int texture_idx = 0;
     if (centre.w > 0.5) texture_idx = 1 + gl_InstanceIndex % 3;
+
+    vec4 vertex_offset = in_position;
+    vertex_offset.x *= scale_x[texture_idx];
+    vertex_offset.y *= scale_y[texture_idx];
+    gl_Position = proj * (centre_view + vertex_offset);
 
     float u = top_left_u[texture_idx] + in_uv.x;
     float v = top_left_v[texture_idx] + in_uv.y;
