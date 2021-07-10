@@ -1,0 +1,39 @@
+#version 450
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+#include "splash_common_comp.glsl"
+
+layout(local_size_x = 32) in;
+
+layout(set = 0, binding = 0) readonly buffer SplashHints
+{
+	SplashHint hints[];
+} splashes;
+
+layout(set = 0, binding = 1, rgba32f) uniform imageBuffer particles;
+
+const vec3 g = vec3(0.0, 0.0, -9.81);
+
+void main() {
+	int hint_idx = int(gl_WorkGroupID.x);
+	int particle_idx = int(gl_GlobalInvocationID.x * 2);
+
+	SplashHint hint = splashes.hints[hint_idx];
+
+	if (hint.lifetime >= kMaxLifetime) {
+		imageStore(particles, particle_idx, vec4(hint.position, 1.0));
+    	imageStore(particles, particle_idx + 1,  vec4(hint.normal * hint.initial_speed, hint.lifetime));  // TODO: generate corona
+	} else {
+		vec4 pos = imageLoad(particles, particle_idx);
+    	vec4 vel = imageLoad(particles, particle_idx + 1);
+	
+		float delta_time = vel.w - hint.lifetime;
+
+		vel.xyz = vel.xyz + g * delta_time;
+		pos.xyz = pos.xyz + vel.xyz * delta_time;
+		vel.w = delta_time;
+
+		imageStore(particles, particle_idx, pos);
+    	imageStore(particles, particle_idx + 1,  vel);
+	}
+}

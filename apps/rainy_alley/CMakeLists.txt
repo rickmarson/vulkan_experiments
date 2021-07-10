@@ -23,7 +23,8 @@ file(GLOB SHADERS "${CMAKE_SOURCE_DIR}/shaders/shadow_map_vs.spv"
                   "${CMAKE_SOURCE_DIR}/shaders/rain_drops_pr_fs.spv"
                   "${CMAKE_SOURCE_DIR}/shaders/rain_drops_inst_fs.spv"
                   "${CMAKE_SOURCE_DIR}/shaders/rainfall_geom_cp.spv"
-                  "${CMAKE_SOURCE_DIR}/shaders/rainfall_pr_cp.spv")
+                  "${CMAKE_SOURCE_DIR}/shaders/rainfall_pr_cp.spv"
+                  "${CMAKE_SOURCE_DIR}/shaders/splash_cp.spv")
 set(SHADERS ${SHADERS} ${IMGUI_SHADERS})
 
 file(GLOB OBJECTS "${CMAKE_SOURCE_DIR}/meshes/alley.glb")

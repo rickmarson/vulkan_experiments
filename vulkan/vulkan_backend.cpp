@@ -1059,7 +1059,7 @@ void VulkanBackend::updateDescriptorSets(const Buffer& buffer, std::vector<VkDes
         descriptor_write.dstSet = descriptor_sets[i];
         descriptor_write.dstBinding = binding;
         descriptor_write.dstArrayElement = 0;
-        descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER;
+        descriptor_write.descriptorType = buffer.descriptor_type;
         descriptor_write.descriptorCount = 1;
         descriptor_write.pBufferInfo = &buffer_info;
         descriptor_write.pImageInfo = nullptr; // Optional

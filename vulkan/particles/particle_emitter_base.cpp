@@ -23,18 +23,31 @@ ParticleEmitterBase::ParticleEmitterBase(const ParticleEmitterConfig& config, Vu
 
 ParticleEmitterBase::~ParticleEmitterBase() {
     vk_descriptor_sets_graphics_.clear();
+    vk_descriptor_sets_collision_graphics_.clear();
     vk_descriptor_sets_compute_.clear();
+    vk_descriptor_sets_collision_compute_.clear();
     compute_pipeline_.reset();
+    collision_compute_pipeline_.reset();
     graphics_pipeline_.reset();
+    collision_graphics_pipeline_.reset();
     backend_->destroyBuffer(particle_buffer_);
     backend_->destroyBuffer(particle_respawn_buffer_);
+    backend_->destroyBuffer(hit_buffer_);
+    backend_->destroyBuffer(collision_particle_buffer_);
+    backend_->destroyBuffer(dispatch_indirect_cmds_);
+    backend_->destroyBuffer(dispatch_indirect_cmds_reset_);
+    backend_->destroyBuffer(draw_indirect_cmds_);
+    backend_->destroyBuffer(draw_indirect_cmds_reset_);
     backend_->destroyUniformBuffer(graphics_view_proj_buffer_);
     backend_->destroyUniformBuffer(compute_camera_buffer_);
     backend_->freeCommandBuffers(compute_command_buffers_);
     backend_->freeCommandBuffers(graphics_command_buffers_);
     texture_atlas_.reset();
     compute_shader_.reset();
+    collision_compute_shader_.reset();
     vertex_shader_.reset();
+    collision_vertex_shader_.reset();
+    collision_fragment_shader_.reset();
     fragment_shader_.reset();
     geometry_shader_.reset();
 }
@@ -81,7 +94,7 @@ bool ParticleEmitterBase::createParticles(uint32_t count) {
         };
     }
 
-    return createAssets(particles);
+    return createAssets(particles) && setupIndirectBuffers();
 }
 
 void ParticleEmitterBase::setTransform(const glm::mat4& transform) {
@@ -113,11 +126,36 @@ bool ParticleEmitterBase::createComputePipeline(std::shared_ptr<Texture>& scene_
 
     compute_pipeline_ = backend_->createComputePipeline("Emitter CP");
 
-    if (compute_pipeline_->buildPipeline(config)) {
-        createComputeDescriptorSets(compute_pipeline_->descriptorSets());
-        updateComputeDescriptorSets(compute_pipeline_->descriptorMetadata(), scene_depth_buffer);
-
-        return true;
+    if (!compute_pipeline_->buildPipeline(config)) {
+        return false;
     }
-    return false;
+
+    if (collision_compute_shader_) {
+        collision_compute_pipeline_ = backend_->createComputePipeline("Collision CP");
+
+        config.compute = collision_compute_shader_;
+        if (!collision_compute_pipeline_->buildPipeline(config)) {
+            return false;
+        }
+    }
+
+    createComputeDescriptorSets();
+    updateComputeDescriptorSets(scene_depth_buffer);
+
+    return true;
+}
+
+bool ParticleEmitterBase::setupIndirectBuffers() {
+    VkDispatchIndirectCommand dispatch_indirect{ 0, 0, 0 };
+    VkDrawIndirectCommand draw_indirect{ 0, 1, 0, 0 };
+    std::vector<VkDispatchIndirectCommand> dispatch_cmds(1, dispatch_indirect);
+    std::vector<VkDrawIndirectCommand> draw_cmds(1, draw_indirect);
+    dispatch_indirect_cmds_ = backend_->createIndirectBuffer<VkDispatchIndirectCommand>("emitter_dispatch_indirect", dispatch_cmds, false);
+    dispatch_indirect_cmds_reset_ = backend_->createIndirectBuffer<VkDispatchIndirectCommand>("emitter_dispatch_indirect_reset", dispatch_cmds, true);
+    draw_indirect_cmds_ = backend_->createIndirectBuffer<VkDrawIndirectCommand>("emitter_draw_indirect", draw_cmds, false);
+    draw_indirect_cmds_reset_ = backend_->createIndirectBuffer<VkDrawIndirectCommand>("emitter_draw_indirect_reset", draw_cmds, true);
+    return dispatch_indirect_cmds_.vk_buffer != VK_NULL_HANDLE && 
+              dispatch_indirect_cmds_reset_.vk_buffer != VK_NULL_HANDLE && 
+              draw_indirect_cmds_.vk_buffer != VK_NULL_HANDLE && 
+              draw_indirect_cmds_reset_.vk_buffer != VK_NULL_HANDLE;
 }

@@ -36,7 +36,8 @@ struct Buffer {
     bool host_visible = false;
     size_t buffer_size = 0;
 
-    VkBufferUsageFlags type = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
+    VkBufferUsageFlags usage = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
+    VkDescriptorType descriptor_type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
     VkBuffer vk_buffer = VK_NULL_HANDLE;
     VkDeviceMemory vk_buffer_memory = VK_NULL_HANDLE;
     VkBufferView vk_buffer_view = VK_NULL_HANDLE; // optional

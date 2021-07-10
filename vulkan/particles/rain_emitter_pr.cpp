@@ -65,12 +65,12 @@ bool RainEmitterPR::createAssets(std::vector<Particle>& particles) {
     auto src = (ParticleCompute*)particles.data();
     std::vector<ParticleCompute> particles_compute(src, src + particles.size());
 
-    particle_buffer_ = backend_->createStorageTexelBuffer<ParticleCompute>(config_.name + "_particles", particles_compute, false /*host_visible*/); 
+    particle_buffer_ = backend_->createStorageBuffer<ParticleCompute>(config_.name + "_particles", particles_compute, VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT, false /*host_visible*/); 
     if (!backend_->createBufferView(particle_buffer_, VK_FORMAT_R32G32B32A32_SFLOAT)) {
         return false;
     }
 
-    particle_respawn_buffer_ = backend_->createStorageTexelBuffer<ParticleCompute>(config_.name + "_particles_respawn", particles_compute, false /*host_visible*/);
+    particle_respawn_buffer_ = backend_->createStorageBuffer<ParticleCompute>(config_.name + "_particles_respawn", particles_compute, VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT, false /*host_visible*/);
     if (!backend_->createBufferView(particle_respawn_buffer_, VK_FORMAT_R32G32B32A32_SFLOAT)) {
         return false;
     }
@@ -212,8 +212,8 @@ bool  RainEmitterPR::createGraphicsPipeline(const RenderPass& render_pass, uint3
 
     if (graphics_pipeline_->buildPipeline(config)) {
         createUniformBuffers();
-        createGraphicsDescriptorSets(graphics_pipeline_->descriptorSets());
-        updateGraphicsDescriptorSets(graphics_pipeline_->descriptorMetadata());
+        createGraphicsDescriptorSets();
+        updateGraphicsDescriptorSets();
         return true;
     }
 	
@@ -263,7 +263,8 @@ RecordCommandsResult RainEmitterPR::recordComputeCommands() {
     return makeRecordCommandsResult(true, compute_command_buffers_);
 }
 
-void RainEmitterPR::createComputeDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {
+void RainEmitterPR::createComputeDescriptorSets() {
+    auto& descriptor_set_layouts = compute_pipeline_->descriptorSets();
     const auto& particle_buffers_layout = descriptor_set_layouts.find(COMPUTE_PARTICLE_BUFFER_SET_ID)->second;
     const auto& camera_layout = descriptor_set_layouts.find(COMPUTE_CAMERA_SET_ID)->second;
     std::vector<VkDescriptorSetLayout> layouts = { particle_buffers_layout, camera_layout };
@@ -282,7 +283,8 @@ void RainEmitterPR::createComputeDescriptorSets(const std::map<uint32_t, VkDescr
     vk_descriptor_sets_compute_ = std::move(layout_descriptor_sets);
 }
 
-void RainEmitterPR::createGraphicsDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) {
+void RainEmitterPR::createGraphicsDescriptorSets() {
+    auto& descriptor_set_layouts = graphics_pipeline_->descriptorSets();
     const auto& particles_layout = descriptor_set_layouts.find(PARTICLES_UNIFORM_SET_ID)->second;
     std::vector<VkDescriptorSetLayout> layouts(backend_->getSwapChainSize(), particles_layout);
 
@@ -301,12 +303,14 @@ void RainEmitterPR::createGraphicsDescriptorSets(const std::map<uint32_t, VkDesc
     vk_descriptor_sets_graphics_ = std::move(layout_descriptor_sets);
 }
 
-void RainEmitterPR::updateGraphicsDescriptorSets(const DescriptorSetMetadata& metadata) {
+void RainEmitterPR::updateGraphicsDescriptorSets() {
+     auto& metadata = graphics_pipeline_->descriptorMetadata();
     const auto& particles_bindings = metadata.set_bindings.find(PARTICLES_UNIFORM_SET_ID)->second;
     texture_atlas_->updateDescriptorSets(vk_descriptor_sets_graphics_, particles_bindings.find(PARTICLES_TEXTURE_ATLAS_BINDING_NAME)->second);
 }
 
-void RainEmitterPR::updateComputeDescriptorSets(const DescriptorSetMetadata& metadata, std::shared_ptr<Texture>& scene_depth_buffer) {
+void RainEmitterPR::updateComputeDescriptorSets(std::shared_ptr<Texture>& scene_depth_buffer) {
+    auto& metadata = compute_pipeline_->descriptorMetadata();
     const auto& particles_bindings = metadata.set_bindings.find(COMPUTE_PARTICLE_BUFFER_SET_ID)->second;
     auto particles_set = std::vector<VkDescriptorSet>{vk_descriptor_sets_compute_[COMPUTE_PARTICLE_BUFFER_SET_ID]};
     backend_->updateDescriptorSets(particle_buffer_, particles_set, particles_bindings.find(COMPUTE_PARTICLE_BUFFER_BINDING_NAME)->second);

@@ -57,13 +57,15 @@ protected:
 
 	virtual bool createAssets(std::vector<Particle>& particles) = 0;
 	virtual void createUniformBuffers() = 0;
-	virtual void createGraphicsDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) = 0;
-	virtual void updateGraphicsDescriptorSets(const DescriptorSetMetadata& metadata) = 0;
-	virtual void createComputeDescriptorSets(const std::map<uint32_t, VkDescriptorSetLayout>& descriptor_set_layouts) = 0;
-	virtual void updateComputeDescriptorSets(const DescriptorSetMetadata& metadata, std::shared_ptr<Texture>& scene_depth_buffer) = 0;
+	virtual void createGraphicsDescriptorSets() = 0;
+	virtual void updateGraphicsDescriptorSets() = 0;
+	virtual void createComputeDescriptorSets() = 0;
+	virtual void updateComputeDescriptorSets(std::shared_ptr<Texture>& scene_depth_buffer) = 0;
 	virtual RecordCommandsResult recordComputeCommands() = 0;
 
 	std::shared_ptr<Texture> getTexture() { return texture_atlas_; }
+
+	bool setupIndirectBuffers();
 
 	ParticleEmitterConfig config_;
 	glm::mat4 transform_;
@@ -71,14 +73,28 @@ protected:
 	VulkanBackend* backend_;
 	Buffer particle_buffer_;
 	Buffer particle_respawn_buffer_;
+	Buffer hit_buffer_;
+	Buffer collision_particle_buffer_;   // used for spawning additional particles at the collision points
+	Buffer dispatch_indirect_cmds_;
+	Buffer dispatch_indirect_cmds_reset_;
+	Buffer draw_indirect_cmds_;
+	Buffer draw_indirect_cmds_reset_;
 	std::shared_ptr<Texture> texture_atlas_;
+
+	std::shared_ptr<ShaderModule> compute_shader_;
+	std::shared_ptr<ShaderModule> collision_compute_shader_;
 
 	std::shared_ptr<ShaderModule> vertex_shader_;
 	std::shared_ptr<ShaderModule> geometry_shader_;
 	std::shared_ptr<ShaderModule> fragment_shader_;
 
-	std::vector<VkDescriptorSet> vk_descriptor_sets_graphics_;
+	std::shared_ptr<ShaderModule> collision_vertex_shader_;
+	std::shared_ptr<ShaderModule> collision_fragment_shader_;
+
 	std::vector<VkDescriptorSet> vk_descriptor_sets_compute_;
+	std::vector<VkDescriptorSet> vk_descriptor_sets_collision_compute_;
+	std::vector<VkDescriptorSet> vk_descriptor_sets_graphics_;
+	std::vector<VkDescriptorSet> vk_descriptor_sets_collision_graphics_;
 
 	struct CameraData {
 		glm::mat4 view_matrix; 
@@ -90,9 +106,10 @@ protected:
 
 	ParticlesGlobalState global_state_pc_;
 
-	std::shared_ptr<ShaderModule> compute_shader_;
 	std::unique_ptr<ComputePipeline> compute_pipeline_;
 	std::unique_ptr<GraphicsPipeline> graphics_pipeline_;
+	std::unique_ptr<ComputePipeline> collision_compute_pipeline_;
+	std::unique_ptr<GraphicsPipeline> collision_graphics_pipeline_;
 	std::vector<VkCommandBuffer> compute_command_buffers_;
 	std::vector<VkCommandBuffer> graphics_command_buffers_; 
 };

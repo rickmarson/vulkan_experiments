@@ -120,7 +120,7 @@ void Texture::loadImageRGBA(uint32_t width, uint32_t height, uint32_t channels, 
     vk_mem_props_ = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     vk_num_samples_ = VK_SAMPLE_COUNT_1_BIT;
 
-    Buffer staging_buffer = backend_->createBuffer<stbi_uc>("image_staging_buffer", pixels, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_SHARING_MODE_EXCLUSIVE, true);
+    Buffer staging_buffer = backend_->createBuffer<stbi_uc>("image_staging_buffer", pixels, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_SHARING_MODE_EXCLUSIVE, true);
     backend_->updateBuffer<stbi_uc>(staging_buffer, pixels);
 
     if (!createImage()) {
