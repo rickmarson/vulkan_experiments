@@ -29,6 +29,8 @@ add_custom_target(shaders ALL ${COMPILE_SHADERS_CMD} ${CMAKE_SOURCE_DIR})
 
 set(SPIRV_REFLECT_FOLDER ${CMAKE_CURRENT_SOURCE_DIR}/utilities/SPIRV-Reflect)
 
+set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/install")
+
 # Setup target for ImGui 
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/utilities/imgui)
 set(IMGUI_SOURCES ${IMGUI_DIR}/imgui.cpp 

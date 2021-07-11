@@ -11,26 +11,17 @@ add_dependencies(model_viewer glfw imgui vulkan shaders)
 
 target_link_libraries(model_viewer ${Vulkan_LIBRARIES} vulkan glfw imgui)
 
-file(GLOB SHADERS "${CMAKE_SOURCE_DIR}/shaders/model_viewer_vs.spv"
-                  "${CMAKE_SOURCE_DIR}/shaders/model_viewer_fs.spv")
-set(SHADERS ${SHADERS} ${IMGUI_SHADERS})
+install(TARGETS model_viewer
+          CONFIGURATIONS Debug Release
+          RUNTIME DESTINATION "bin")
 
-file(GLOB OBJECTS "${CMAKE_SOURCE_DIR}/meshes/viking_room.glb")
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/shaders" 
+           DESTINATION "bin"
+           FILES_MATCHING PATTERN "*.spv")
 
-file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/shaders/)
-file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/meshes/)
-file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/textures/)
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/meshes" 
+           DESTINATION "bin"
+           FILES_MATCHING PATTERN "*.glb")
 
-foreach(SHADER_FILE IN LISTS SHADERS)
-    add_custom_command(TARGET model_viewer POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SHADER_FILE} ${CMAKE_CURRENT_BINARY_DIR}/shaders/
-        COMMENT "Copying SPIRV shader: ${SHADER_FILE}"
-    )
-endforeach()
-
-foreach(OBJECT_FILE IN LISTS OBJECTS)
-    add_custom_command(TARGET model_viewer POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${OBJECT_FILE} ${CMAKE_CURRENT_BINARY_DIR}/meshes/
-        COMMENT "Copying object: ${OBJECT_FILE}"
-    )
-endforeach()
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/textures" 
+           DESTINATION "bin")

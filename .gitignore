@@ -3,3 +3,4 @@
 shaders/*.spv
 build/
 out/
+install/

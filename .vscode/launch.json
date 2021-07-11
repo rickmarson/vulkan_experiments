@@ -10,7 +10,7 @@
             "args": [],
             "stopAtEntry": false,
             "console": false,
-            "cwd": "${command:cmake.launchTargetDirectory}/..",
+            "cwd": "${workspaceFolder}",
         },
         {
             "name": "Debug CMake Target (Linux)",
@@ -22,7 +22,7 @@
             "args": [],
             "stopAtEntry": false,
             "console": false,
-            "cwd": "${command:cmake.launchTargetDirectory}",
+            "cwd": "${workspaceFolder}",
         }
     ]
 }
